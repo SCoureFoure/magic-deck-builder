@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3.12 -m venv:*)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(pip install:*)",
+      "Bash(python3:*)",
+      "Bash(pytest:*)",
+      "Bash(docker compose:*)",
+      "Bash(python:*)",
+      "Bash(timeout 5 uvicorn:*)",
+      "Bash(uvicorn src.web.app:app:*)",
+      "Bash(curl:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
