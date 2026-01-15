@@ -100,7 +100,18 @@ def find_commanders(
         if card.legalities.get("commander") == "legal"
     ]
 
-    return results[:limit]
+    unique: list[Card] = []
+    seen: set[str] = set()
+    for card in results:
+        normalized_name = card.name.strip().lower()
+        if normalized_name in seen:
+            continue
+        seen.add(normalized_name)
+        unique.append(card)
+        if len(unique) >= limit:
+            break
+
+    return unique
 
 
 def create_commander_entry(session: Session, card: Card) -> Optional[Commander]:
