@@ -59,8 +59,8 @@ Recommended MVP data sources: Scryfall only + user-imported decklists. Defer EDH
 - Deck assembly to 100 cards with a stable template
 - Legality checks + automatic fixes
 - Basic explanations + export
- - Minimum UI: CLI that generates a decklist and exports text/CSV.
- - Initial archetype support: 3 themes (tribal, spellslinger, sacrifice) plus generic goodstuff fallback.
+- Minimum UI: CLI that generates a decklist and exports text/CSV.
+- Initial archetype support: 3 themes (tribal, spellslinger, sacrifice) plus generic goodstuff fallback.
 
 ### Out of scope (initially)
 - Full gameplay simulation

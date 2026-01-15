@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 
 type CommanderResult = {
   name: string;
@@ -8,6 +9,7 @@ type CommanderResult = {
   cmc: number;
   eligibility: string | null;
   commander_legal: string;
+  image_url: string | null;
 };
 
 type CommanderSearchResponse = {
@@ -31,12 +33,41 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<CommanderResult[]>([]);
   const [lastQuery, setLastQuery] = useState<string | null>(null);
-
+  const [zoomedCardName, setZoomedCardName] = useState<string | null>(null);
   const normalizedLimit = useMemo(() => {
     const parsed = Number(limit);
     if (Number.isNaN(parsed) || parsed < 1) return DEFAULT_LIMIT;
     return Math.min(parsed, 50);
   }, [limit]);
+
+  useEffect(() => {
+    if (!zoomedCardName) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".card-image")) return;
+      setZoomedCardName(null);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, [zoomedCardName]);
+
+  const handleImageClick = (
+    event: ReactMouseEvent<HTMLImageElement>,
+    cardName: string
+  ) => {
+    event.stopPropagation();
+    setZoomedCardName((previous) => (previous === cardName ? null : cardName));
+  };
+
+  const handleImageMouseLeave = (cardName: string) => {
+    if (zoomedCardName === cardName) {
+      setZoomedCardName(null);
+    }
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -59,19 +90,34 @@ export default function App() {
 
       const response = await fetch(`/api/commanders?${params.toString()}`);
       if (!response.ok) {
+        let detail = "Search failed.";
+        try {
+          const payload = await response.json();
+          if (typeof payload?.detail === "string") {
+            detail = payload.detail;
+          }
+        } catch {
+          // Ignore JSON parse errors and use default message.
+        }
+
         if (response.status === 404) {
           setResults([]);
           setLastQuery(query.trim());
+          setError(detail);
           return;
         }
-        throw new Error("Search failed.");
+        throw new Error(`Search failed (${response.status}). ${detail}`);
       }
 
       const data = (await response.json()) as CommanderSearchResponse;
       setResults(data.results);
       setLastQuery(data.query);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unexpected error.");
+      if (err instanceof TypeError) {
+        setError("Could not reach API. Is the backend running at http://localhost:8000?");
+      } else {
+        setError(err instanceof Error ? err.message : "Unexpected error.");
+      }
     } finally {
       setLoading(false);
     }
@@ -153,9 +199,23 @@ export default function App() {
             <div className="table">
               {results.map((card) => (
                 <article key={card.name} className="row">
-                  <div>
-                    <h3>{card.name}</h3>
-                    <p className="muted">{card.type_line}</p>
+                  <div className="card-info">
+                    {card.image_url ? (
+                      <img
+                        className={`card-image${zoomedCardName === card.name ? " zoomed" : ""}`}
+                        src={card.image_url}
+                        alt={`${card.name} card art`}
+                        loading="lazy"
+                        onClick={(event) => handleImageClick(event, card.name)}
+                        onMouseLeave={() => handleImageMouseLeave(card.name)}
+                      />
+                    ) : (
+                      <div className="card-image placeholder">No image</div>
+                    )}
+                    <div>
+                      <h3>{card.name}</h3>
+                      <p className="muted">{card.type_line}</p>
+                    </div>
                   </div>
                   <div className="pill-group">
                     <span className="pill">{formatColors(card.color_identity)}</span>

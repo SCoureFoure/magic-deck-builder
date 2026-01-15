@@ -10,11 +10,14 @@ from rich.table import Table
 from src.config import settings
 from src.database.engine import get_db, init_db
 from src.engine.commander import find_commanders, is_commander_eligible, populate_commanders
+from src.engine.deck_builder import generate_deck
+from src.engine.validator import validate_deck
 from src.ingestion.bulk_ingest import download_and_ingest_bulk
 from src.ingestion.scryfall_client import ScryfallClient
 
 ingest_app = typer.Typer(help="Data ingestion commands")
 search_app = typer.Typer(help="Search commands")
+generate_app = typer.Typer(help="Deck generation commands")
 console = Console()
 
 
@@ -229,4 +232,115 @@ def search_commander(
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+# Generate commands
+
+
+@generate_app.command("deck")
+def generate_deck_cli(
+    commander_name: str = typer.Argument(..., help="Commander name for the deck"),
+    output: Path = typer.Option(None, "--output", "-o", help="Output file path (optional)"),
+):
+    """Generate a 100-card Commander deck.
+
+    Examples:
+        python -m src.cli generate deck "Atraxa"
+        python -m src.cli generate deck "Atraxa" --output my_deck.txt
+    """
+    console.print(f"[bold cyan]Deck Generation[/bold cyan]")
+    console.print(f"Commander: [yellow]{commander_name}[/yellow]")
+    console.print()
+
+    try:
+        with get_db() as db:
+            # Find commander
+            with console.status(f"Searching for commander '{commander_name}'..."):
+                commanders = find_commanders(db, name_query=commander_name, limit=1)
+
+            if not commanders:
+                console.print(f"[red]Error:[/red] Commander '{commander_name}' not found")
+                console.print(
+                    f"\n[dim]Tip: Search for commanders with:[/dim]"
+                    f"\n[cyan]python -m src.cli search commander \"{commander_name}\"[/cyan]"
+                )
+                raise typer.Exit(1)
+
+            commander_card = commanders[0]
+
+            # Get or create commander entry
+            from src.engine.commander import create_commander_entry
+            commander = create_commander_entry(db, commander_card)
+
+            if not commander:
+                console.print(f"[red]Error:[/red] Could not create commander entry")
+                raise typer.Exit(1)
+
+            # Seed roles if needed
+            from src.database.seed_roles import seed_roles
+            roles_added = seed_roles(db)
+            if roles_added > 0:
+                console.print(f"[green]✓[/green] Initialized {roles_added} card roles")
+
+            # Generate deck
+            with console.status("Generating deck..."):
+                deck = generate_deck(db, commander)
+
+            # Validate deck
+            is_valid, errors = validate_deck(deck)
+
+            if not is_valid:
+                console.print("[yellow]⚠[/yellow] Deck validation warnings:")
+                for error in errors:
+                    console.print(f"  • {error}")
+                console.print()
+
+            # Display deck summary
+            console.print(f"[green]✓[/green] Generated deck with [bold]{len(deck.deck_cards)}[/bold] card entries")
+            total_cards = sum(dc.quantity for dc in deck.deck_cards)
+            console.print(f"[green]✓[/green] Total cards: [bold]{total_cards}[/bold]")
+            console.print()
+
+            # Group cards by role
+            from collections import defaultdict
+            role_groups: dict[str, list] = defaultdict(list)
+
+            for deck_card in deck.deck_cards:
+                role_name = deck_card.role.name if deck_card.role else "unknown"
+                role_groups[role_name].append(deck_card)
+
+            # Display by role
+            for role_name in ["lands", "ramp", "draw", "removal", "synergy", "wincons", "flex"]:
+                cards = role_groups.get(role_name, [])
+                if not cards:
+                    continue
+
+                role_count = sum(dc.quantity for dc in cards)
+                console.print(f"\n[bold cyan]{role_name.upper()}[/bold cyan] ({role_count}):")
+
+                for deck_card in sorted(cards, key=lambda dc: dc.card.name):
+                    quantity_str = f"{deck_card.quantity}x" if deck_card.quantity > 1 else "  "
+                    console.print(f"  {quantity_str} {deck_card.card.name}")
+
+            # Output to file if requested
+            if output:
+                with open(output, "w") as f:
+                    f.write(f"Commander: {commander_card.name}\n\n")
+                    for role_name in ["lands", "ramp", "draw", "removal", "synergy", "wincons", "flex"]:
+                        cards = role_groups.get(role_name, [])
+                        if not cards:
+                            continue
+                        role_count = sum(dc.quantity for dc in cards)
+                        f.write(f"\n{role_name.upper()} ({role_count}):\n")
+                        for deck_card in sorted(cards, key=lambda dc: dc.card.name):
+                            quantity_str = f"{deck_card.quantity}x" if deck_card.quantity > 1 else "1"
+                            f.write(f"{quantity_str} {deck_card.card.name}\n")
+
+                console.print(f"\n[green]✓[/green] Deck saved to: {output}")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        import traceback
+        traceback.print_exc()
         raise typer.Exit(1)

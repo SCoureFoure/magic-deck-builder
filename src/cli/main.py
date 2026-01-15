@@ -13,6 +13,7 @@ app = typer.Typer(
 # Add command groups
 app.add_typer(commands.ingest_app, name="ingest", help="Data ingestion commands")
 app.add_typer(commands.search_app, name="search", help="Search for cards and commanders")
+app.add_typer(commands.generate_app, name="generate", help="Generate Commander decks")
 
 console = Console()
 

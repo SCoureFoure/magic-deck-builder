@@ -12,7 +12,18 @@
       "Bash(uvicorn src.web.app:app:*)",
       "Bash(curl:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial implementation of Magic Deck Builder\n\nCore features:\n- Scryfall data ingestion with streaming JSON parsing \\(ijson\\)\n- SQLite/PostgreSQL database with SQLAlchemy ORM\n- Commander eligibility detection \\(legendary creatures, partner, backgrounds\\)\n- CLI with Rich output \\(search, ingest commands\\)\n- FastAPI REST API backend with commander search endpoint\n- React + TypeScript frontend \\(Vite setup\\)\n- Comprehensive test suite \\(38 passing tests\\)\n\nSecurity improvements:\n- SHA-256 hashing for cache keys \\(prevents path traversal\\)\n- Proper JSON field type hints\n- One-to-one commander relationship\n\nTechnical details:\n- Python 3.9+ compatible\n- Rate limiting and caching for Scryfall API\n- Memory-efficient bulk data processing\n- CORS enabled for local development\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(lsof:*)",
+      "Bash(gtimeout 90 python:*)",
+      "Bash(pkill:*)",
+      "Bash(kill:*)",
+      "Bash(/opt/homebrew/Caskroom/miniconda/base/envs/magic-deck-builder/bin/python -m src.cli:*)",
+      "Bash(conda run:*)",
+      "Bash(echo:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(git log:*)"
     ]
   }
 }
