@@ -1,0 +1,26 @@
+[
+  {
+    "object": "card",
+    "id": "f4e42771-b0df-47d9-b2f3-5a8d0c8b01a5",
+    "name": "Sol Ring",
+    "type_line": "Artifact",
+    "oracle_text": "{T}: Add {C}{C}.",
+    "mana_cost": "{1}",
+    "cmc": 1.0,
+    "colors": [],
+    "color_identity": [],
+    "legalities": {"commander": "legal", "vintage": "restricted"},
+    "prices": {"usd": "1.50"}
+  },
+  {
+    "object": "card",
+    "id": "c60d6128-70ee-4ccc-9079-7d3bf822e48a",
+    "name": "Command Tower",
+    "type_line": "Land",
+    "oracle_text": "{T}: Add one mana of any color in your commander's color identity.",
+    "cmc": 0.0,
+    "colors": [],
+    "color_identity": [],
+    "legalities": {"commander": "legal"}
+  }
+]

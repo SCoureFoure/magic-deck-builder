@@ -1,0 +1,28 @@
+[
+  {
+    "object": "card",
+    "id": "c87ba1ab-4a0e-4b69-a1b3-267c38a6f99e",
+    "name": "Atraxa, Praetors' Voice",
+    "type_line": "Legendary Creature — Phyrexian Angel Horror",
+    "oracle_text": "Flying, vigilance, deathtouch, lifelink\nProliferate at the beginning of your end step. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)",
+    "mana_cost": "{G}{W}{U}{B}",
+    "cmc": 4.0,
+    "colors": ["W", "U", "B", "G"],
+    "color_identity": ["W", "U", "B", "G"],
+    "legalities": {"commander": "legal", "vintage": "legal"},
+    "prices": {"usd": "28.50"}
+  },
+  {
+    "object": "card",
+    "id": "81203ab0-ef52-4440-b3da-97d77e66e460",
+    "name": "Urza, Lord High Artificer",
+    "type_line": "Legendary Creature — Human Artificer",
+    "oracle_text": "When Urza enters the battlefield, create a 0/0 colorless Construct artifact creature token with \"This creature gets +1/+1 for each artifact you control.\"\nTap an untapped artifact you control: Add {U}.\n{5}: Shuffle your library, then exile the top card. Until end of turn, you may play that card without paying its mana cost.",
+    "mana_cost": "{2}{U}{U}",
+    "cmc": 4.0,
+    "colors": ["U"],
+    "color_identity": ["U"],
+    "legalities": {"commander": "legal", "vintage": "legal"},
+    "prices": {"usd": "45.00"}
+  }
+]

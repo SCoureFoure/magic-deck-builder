@@ -21,9 +21,8 @@ build/
 .env
 
 # Data and cache
-data/
-*.db
-*.sqlite
+data/cache/
+
 
 # Web
 web/node_modules/
