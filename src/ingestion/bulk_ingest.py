@@ -53,6 +53,7 @@ def map_card_data(card_data: dict[str, Any]) -> dict[str, Any]:
         "legalities": card_data.get("legalities", {}),
         "price_usd": float(price_usd) if price_usd else None,
         "image_uris": _extract_image_uris(card_data),
+        "card_faces": card_data.get("card_faces"),
     }
 
 

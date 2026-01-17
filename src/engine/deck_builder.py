@@ -4,6 +4,8 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from src.database.models import Card, Commander, Deck, DeckCard, Role
+from src.engine.archetypes import extract_identity
+from src.engine.llm_agent import suggest_cards_for_role
 from src.engine.lands import calculate_land_distribution, needs_command_tower
 from src.engine.selector import select_basic_lands, select_cards_for_role, select_command_tower
 
@@ -86,6 +88,14 @@ def generate_deck(
         selected_ids.add(card_id)
 
     # Step 3: Select non-land cards by role
+    seed_names = (constraints or {}).get("seeds", [])
+    seed_cards = (
+        session.query(Card).filter(Card.name.in_(seed_names)).all()
+        if seed_names
+        else []
+    )
+    identity = extract_identity(commander_card, seed_cards)
+
     role_targets = [
         ("ramp", 10),
         ("draw", 10),
@@ -98,13 +108,37 @@ def generate_deck(
     cards_by_role: dict[str, list[Card]] = {}
     shortfall = 0
 
+    use_llm_agent = bool((constraints or {}).get("use_llm_agent"))
+    current_cards: list[Card] = [commander_card]
+
     for role_name, target_count in role_targets:
-        cards = select_cards_for_role(
-            session, role_name, commander.color_identity or [], target_count, selected_ids
-        )
+        cards: list[Card] = []
+        if use_llm_agent:
+            cards = suggest_cards_for_role(
+                session=session,
+                deck_id=deck.id,
+                commander=commander,
+                deck_cards=current_cards,
+                role=role_name,
+                count=target_count,
+                exclude_ids=selected_ids,
+            )
+
+        if len(cards) < target_count:
+            remaining = target_count - len(cards)
+            fallback = select_cards_for_role(
+                session,
+                role_name,
+                commander.color_identity or [],
+                remaining,
+                identity,
+                selected_ids,
+            )
+            cards.extend(fallback)
         cards_by_role[role_name] = cards
         for card in cards:
             selected_ids.add(card.id)
+            current_cards.append(card)
 
         if len(cards) < target_count:
             shortfall += target_count - len(cards)
@@ -112,9 +146,29 @@ def generate_deck(
     # Step 4: Fill synergy pool + handle shortfalls
     # Commander counts as 1 synergy card, so we need 24 more + shortfall
     synergy_target = 24 + shortfall
-    synergy_cards = select_cards_for_role(
-        session, "synergy", commander.color_identity or [], synergy_target, selected_ids
-    )
+    synergy_cards: list[Card] = []
+    if use_llm_agent:
+        synergy_cards = suggest_cards_for_role(
+            session=session,
+            deck_id=deck.id,
+            commander=commander,
+            deck_cards=current_cards,
+            role="synergy",
+            count=synergy_target,
+            exclude_ids=selected_ids,
+        )
+
+    if len(synergy_cards) < synergy_target:
+        remaining = synergy_target - len(synergy_cards)
+        fallback = select_cards_for_role(
+            session,
+            "synergy",
+            commander.color_identity or [],
+            remaining,
+            identity,
+            selected_ids,
+        )
+        synergy_cards.extend(fallback)
     cards_by_role["synergy"] = synergy_cards
 
     # Step 5: Add non-land cards to deck with correct role assignments

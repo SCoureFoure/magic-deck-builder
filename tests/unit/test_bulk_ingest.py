@@ -62,6 +62,7 @@ def test_map_card_data_uses_face_images():
     }
     mapped = map_card_data(card_data)
     assert mapped["image_uris"] == {"normal": "https://example.com/face.png"}
+    assert mapped["card_faces"] == [{"image_uris": {"normal": "https://example.com/face.png"}}]
 
 
 def test_upsert_cards_inserts_and_updates(db_session: Session):

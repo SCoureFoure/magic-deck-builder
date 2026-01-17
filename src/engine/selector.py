@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from src.database.models import Card
+from src.engine.archetypes import score_card_for_identity
 from src.engine.roles import classify_card_role
 
 
@@ -15,6 +16,7 @@ def select_cards_for_role(
     role: str,
     color_identity: list[str],
     count: int,
+    identity: Optional[dict[str, float]] = None,
     exclude_ids: Optional[set[int]] = None,
 ) -> list[Card]:
     """Select cards for a specific role matching color identity.
@@ -60,9 +62,15 @@ def select_cards_for_role(
                 if len(eligible_cards) >= count * 3:  # Get 3x more than needed for variety
                     break
 
+    if identity is not None:
+        scored_cards = [
+            (score_card_for_identity(card, identity), card) for card in eligible_cards
+        ]
+        scored_cards.sort(key=lambda item: (-item[0], item[1].name))
+        return [card for _, card in scored_cards[:count]]
+
     # Randomly select up to 'count' cards
-    selected = random.sample(eligible_cards, min(count, len(eligible_cards)))
-    return selected
+    return random.sample(eligible_cards, min(count, len(eligible_cards)))
 
 
 def select_basic_lands(

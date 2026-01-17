@@ -211,6 +211,263 @@ def test_create_commander_entry_duplicate(db_session: Session):
     assert db_session.query(Commander).count() == 1
 
 
+def test_is_commander_eligible_planeswalker_with_ability():
+    """Test planeswalker with 'can be your commander' ability."""
+    card = Card(
+        scryfall_id="test-pw-commander",
+        name="Teferi, Hero",
+        type_line="Legendary Planeswalker — Teferi",
+        oracle_text="Teferi, Hero can be your commander.\n+1: Draw a card.",
+        color_identity=["W", "U"],
+        cmc=5.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    assert "planeswalker" in reason.lower() or "can be your commander" in reason.lower()
+
+
+def test_is_commander_eligible_partner_with():
+    """Test 'partner with' mechanic - legendary creatures return 'legendary creature' early."""
+    card = Card(
+        scryfall_id="test-partner-with",
+        name="Pir, Imaginative Rascal",
+        type_line="Legendary Creature — Human",
+        oracle_text="Partner with Toothy (When this enters, target player may search for Toothy)",
+        color_identity=["G"],
+        cmc=2.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    # Legendary creatures return early with "legendary creature"
+    assert reason == "legendary creature"
+
+
+def test_is_commander_eligible_friends_forever():
+    """Test 'friends forever' mechanic - legendary creatures return 'legendary creature' early."""
+    card = Card(
+        scryfall_id="test-friends",
+        name="Test Friend",
+        type_line="Legendary Creature — Human",
+        oracle_text="Friends forever\nOther text",
+        color_identity=["R"],
+        cmc=3.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    # Legendary creatures return early
+    assert reason == "legendary creature"
+
+
+def test_is_commander_eligible_choose_background():
+    """Test 'choose a Background' mechanic - legendary creatures return 'legendary creature' early."""
+    card = Card(
+        scryfall_id="test-choose-bg",
+        name="Test Hero",
+        type_line="Legendary Creature — Human",
+        oracle_text="Choose a Background\nWhenever you attack...",
+        color_identity=["W"],
+        cmc=2.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    # Legendary creatures return early
+    assert reason == "legendary creature"
+
+
+def test_is_commander_not_eligible_non_legendary():
+    """Test non-legendary creature is not eligible."""
+    card = Card(
+        scryfall_id="test-non-legendary",
+        name="Regular Bear",
+        type_line="Creature — Bear",
+        color_identity=["G"],
+        cmc=2.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is False
+
+
+def test_is_commander_case_insensitive_text_matching():
+    """Test that text matching is case insensitive."""
+    card = Card(
+        scryfall_id="test-case",
+        name="Test",
+        type_line="Legendary Creature",
+        oracle_text="PARTNER\nSome other text",
+        color_identity=["B"],
+        cmc=3.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+
+
+def test_is_commander_partner_regex_not_partner_with():
+    """Test that 'partner' regex doesn't match 'partner with'."""
+    card = Card(
+        scryfall_id="test-partner-only",
+        name="Test Partner",
+        type_line="Legendary Creature",
+        oracle_text="Partner\n(You can have two commanders if both have partner.)",
+        color_identity=["U"],
+        cmc=4.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    # Legendary creatures always return "legendary creature" first
+    assert reason == "legendary creature"
+
+
+def test_find_commanders_returns_only_eligible(db_session: Session):
+    """Test find_commanders returns only eligible cards."""
+    # Add eligible card
+    eligible = Card(
+        scryfall_id="eligible-1",
+        name="Eligible Commander",
+        type_line="Legendary Creature",
+        color_identity=["G"],
+        cmc=3.0,
+        legalities={"commander": "legal"},
+    )
+    db_session.add(eligible)
+
+    # Add non-eligible card
+    not_eligible = Card(
+        scryfall_id="not-eligible-1",
+        name="Regular Card",
+        type_line="Creature",
+        color_identity=["G"],
+        cmc=2.0,
+        legalities={"commander": "legal"},
+    )
+    db_session.add(not_eligible)
+    db_session.commit()
+
+    commanders = find_commanders(db_session)
+
+    assert len(commanders) == 1
+    assert commanders[0].scryfall_id == "eligible-1"
+
+
+def test_create_commander_entry_stores_reason(db_session: Session):
+    """Test that commander entry stores eligibility reason."""
+    card = Card(
+        scryfall_id="test-reason",
+        name="Test Commander",
+        type_line="Legendary Creature",
+        color_identity=["R", "G"],
+        cmc=4.0,
+        legalities={"commander": "legal"},
+    )
+    db_session.add(card)
+    db_session.commit()
+
+    create_commander_entry(db_session, card)
+
+    commander = db_session.query(Commander).filter_by(card_id=card.id).first()
+    assert commander is not None
+    assert commander.eligibility_reason == "legendary creature"
+    assert commander.color_identity == ["R", "G"]
+
+
+def test_is_commander_eligible_partner_non_legendary():
+    """Test non-legendary creature with partner is eligible."""
+    card = Card(
+        scryfall_id="test-partner-nonleg",
+        name="Partner Creature",
+        type_line="Creature — Human",  # Not legendary
+        oracle_text="Partner\nWhenever this creature attacks...",
+        color_identity=["R"],
+        cmc=3.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    assert reason == "partner"
+
+
+def test_is_commander_eligible_partner_with_non_legendary():
+    """Test non-legendary creature with 'partner with' is eligible."""
+    card = Card(
+        scryfall_id="test-pw-nonleg",
+        name="Pir",
+        type_line="Creature — Human",  # Not legendary
+        oracle_text="Partner with Toothy\nWhenever you put counters...",
+        color_identity=["G"],
+        cmc=2.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    assert reason == "partner with"
+
+
+def test_is_commander_eligible_friends_forever_non_legendary():
+    """Test non-legendary creature with 'friends forever' is eligible."""
+    card = Card(
+        scryfall_id="test-ff-nonleg",
+        name="Friend",
+        type_line="Creature — Human",  # Not legendary
+        oracle_text="Friends forever\nYou and target opponent each draw a card.",
+        color_identity=["W"],
+        cmc=3.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    assert reason == "friends forever"
+
+
+def test_is_commander_eligible_choose_background_non_legendary():
+    """Test non-legendary with 'choose a background' is eligible."""
+    card = Card(
+        scryfall_id="test-bg-nonleg",
+        name="Hero",
+        type_line="Creature — Human",  # Not legendary
+        oracle_text="Choose a Background\nWhenever you attack...",
+        color_identity=["B"],
+        cmc=2.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    assert reason == "choose a background"
+
+
+def test_is_commander_eligible_background_enchantment():
+    """Test Background enchantment is eligible."""
+    card = Card(
+        scryfall_id="test-bg-ench",
+        name="Background Card",
+        type_line="Enchantment — Background",
+        oracle_text="Commander creatures you own have +1/+1",
+        color_identity=["R"],
+        cmc=3.0,
+        legalities={"commander": "legal"},
+    )
+
+    is_eligible, reason = is_commander_eligible(card)
+    assert is_eligible is True
+    assert reason == "background"
+
+
 def test_populate_commanders(db_session: Session):
     """Test populating commanders table."""
     # Add multiple cards

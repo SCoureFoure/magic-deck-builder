@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -19,6 +20,10 @@ class Settings(BaseSettings):
     # Cache
     cache_dir: Path = Path("./data/cache")
     cache_ttl_hours: int = 24
+
+    # LLM (OpenAI)
+    openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-4o-mini"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

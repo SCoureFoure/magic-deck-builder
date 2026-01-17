@@ -23,7 +23,16 @@
       "Bash(conda run:*)",
       "Bash(echo:*)",
       "Bash(.venv/bin/python:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(mutmut results:*)",
+      "Bash(mutmut show:*)",
+      "Bash(for id in 23 26 36 42 49)",
+      "Bash(do echo \"=== Mutation $id ===\")",
+      "Bash(done)",
+      "Bash(for id in 1137 1145 1150)",
+      "Bash(for id in 663 666 667 675 682 687)",
+      "Bash(for id in 1150 1154 1158)",
+      "Bash(for id in 59 60 79 80)"
     ]
   }
 }
