@@ -27,7 +27,7 @@ class Card(Base):
 
     # Colors and identity
     colors: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
-    color_identity: Mapped[list[str]] = mapped_column(JSON, nullable=False, index=True)
+    color_identity: Mapped[list[str]] = mapped_column(JSON, nullable=False)
 
     # Mana cost
     mana_cost: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -67,7 +67,7 @@ class Commander(Base):
         Integer, ForeignKey("cards.id"), unique=True, nullable=False
     )
     eligibility_reason: Mapped[str] = mapped_column(String(255), nullable=False)
-    color_identity: Mapped[list[str]] = mapped_column(JSON, nullable=False, index=True)
+    color_identity: Mapped[list[str]] = mapped_column(JSON, nullable=False)
 
     # Relationships (one-to-one with Card)
     card: Mapped["Card"] = relationship(
