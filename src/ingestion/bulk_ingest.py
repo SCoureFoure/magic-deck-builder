@@ -140,3 +140,30 @@ def download_and_ingest_bulk(
     client.download_bulk_file(download_uri, output_path, force=force_download)
 
     return ingest_bulk_file(session, output_path, limit=limit, filter_fn=filter_fn)
+
+
+def ingest_sample_search(
+    session: Session,
+    client: ScryfallClient,
+    query: str,
+    limit: int,
+) -> int:
+    """Ingest a limited set of cards using Scryfall search."""
+    processed = 0
+    page = 1
+
+    while processed < limit:
+        payload = client.search_cards(query, page=page)
+        cards = payload.get("data", [])
+        if not cards:
+            break
+
+        remaining = limit - processed
+        batch = cards[:remaining]
+        processed += upsert_cards(session, batch)
+
+        if not payload.get("has_more"):
+            break
+        page += 1
+
+    return processed

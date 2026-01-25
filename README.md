@@ -41,6 +41,9 @@ python -m src.cli ingest bulk oracle_cards
 # Ingest a smaller commander-legal subset (useful for small DB limits)
 python -m src.cli ingest small --limit 20000
 
+# Ingest a very small sample via Scryfall search (fastest option)
+python -m src.cli ingest sample --limit 2000
+
 # Ingest from a local file
 python -m src.cli ingest file ./data/oracle_cards.json
 

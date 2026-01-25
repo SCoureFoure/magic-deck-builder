@@ -12,7 +12,11 @@ from src.database.engine import get_db, init_db
 from src.engine.commander import find_commanders, is_commander_eligible, populate_commanders
 from src.engine.deck_builder import generate_deck
 from src.engine.validator import validate_deck
-from src.ingestion.bulk_ingest import commander_legal_filter, download_and_ingest_bulk
+from src.ingestion.bulk_ingest import (
+    commander_legal_filter,
+    download_and_ingest_bulk,
+    ingest_sample_search,
+)
 from src.ingestion.scryfall_client import ScryfallClient
 
 ingest_app = typer.Typer(help="Data ingestion commands")
@@ -186,6 +190,46 @@ def ingest_small(
                     limit=limit,
                     filter_fn=commander_legal_filter,
                 )
+
+        console.print(
+            f"[green]✓[/green] Successfully ingested [bold]{card_count}[/bold] cards"
+        )
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@ingest_app.command("sample")
+def ingest_sample(
+    limit: int = typer.Option(2000, "--limit", help="Max cards to ingest"),
+    query: str = typer.Option("legal:commander", "--query", help="Scryfall search query"),
+    init_tables: bool = typer.Option(
+        True, "--init-tables/--no-init-tables", help="Initialize database tables if needed"
+    ),
+):
+    """Ingest a small sample via Scryfall search (fast, low storage)."""
+    console.print("[bold cyan]Magic Deck Builder - Sample Ingestion[/bold cyan]")
+    console.print(f"Query: [yellow]{query}[/yellow]")
+    console.print(f"Limit: [yellow]{limit}[/yellow]")
+    console.print()
+
+    if init_tables:
+        with console.status("[bold green]Initializing database tables..."):
+            init_db()
+        console.print("[green]✓[/green] Database tables initialized")
+
+    client = ScryfallClient()
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Searching Scryfall...", total=None)
+            with get_db() as db:
+                card_count = ingest_sample_search(db, client, query=query, limit=limit)
+            progress.update(task, description="[green]✓[/green] Sample ingest complete")
 
         console.print(
             f"[green]✓[/green] Successfully ingested [bold]{card_count}[/bold] cards"
