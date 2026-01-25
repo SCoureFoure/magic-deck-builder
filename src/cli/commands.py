@@ -242,6 +242,10 @@ def search_commander(
 def generate_deck_cli(
     commander_name: str = typer.Argument(..., help="Commander name for the deck"),
     output: Path = typer.Option(None, "--output", "-o", help="Output file path (optional)"),
+    use_council: bool = typer.Option(False, "--council", help="Use council-based selection"),
+    council_config: Path = typer.Option(
+        None, "--council-config", help="Path to council config YAML"
+    ),
 ):
     """Generate a 100-card Commander deck.
 
@@ -285,7 +289,16 @@ def generate_deck_cli(
 
             # Generate deck
             with console.status("Generating deck..."):
-                deck = generate_deck(db, commander)
+                deck = generate_deck(
+                    db,
+                    commander,
+                    constraints={
+                        "use_council": use_council,
+                        "council_config_path": str(council_config)
+                        if council_config
+                        else None,
+                    },
+                )
 
             # Validate deck
             is_valid, errors = validate_deck(deck)

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Card, Commander, Deck, DeckCard, Role
 from src.engine.archetypes import extract_identity
+from src.engine.council import select_cards_with_council
 from src.engine.llm_agent import suggest_cards_for_role
 from src.engine.lands import calculate_land_distribution, needs_command_tower
 from src.engine.selector import select_basic_lands, select_cards_for_role, select_command_tower
@@ -109,11 +110,25 @@ def generate_deck(
     shortfall = 0
 
     use_llm_agent = bool((constraints or {}).get("use_llm_agent"))
+    use_council = bool((constraints or {}).get("use_council"))
+    council_overrides = (constraints or {}).get("council_overrides")
+    council_config_path = (constraints or {}).get("council_config_path")
     current_cards: list[Card] = [commander_card]
 
     for role_name, target_count in role_targets:
         cards: list[Card] = []
-        if use_llm_agent:
+        if use_council:
+            cards = select_cards_with_council(
+                session=session,
+                commander=commander,
+                deck_cards=current_cards,
+                role=role_name,
+                count=target_count,
+                exclude_ids=selected_ids,
+                config_path=council_config_path,
+                overrides=council_overrides,
+            )
+        elif use_llm_agent:
             cards = suggest_cards_for_role(
                 session=session,
                 deck_id=deck.id,
@@ -147,7 +162,18 @@ def generate_deck(
     # Commander counts as 1 synergy card, so we need 24 more + shortfall
     synergy_target = 24 + shortfall
     synergy_cards: list[Card] = []
-    if use_llm_agent:
+    if use_council:
+        synergy_cards = select_cards_with_council(
+            session=session,
+            commander=commander,
+            deck_cards=current_cards,
+            role="synergy",
+            count=synergy_target,
+            exclude_ids=selected_ids,
+            config_path=council_config_path,
+            overrides=council_overrides,
+        )
+    elif use_llm_agent:
         synergy_cards = suggest_cards_for_role(
             session=session,
             deck_id=deck.id,

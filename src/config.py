@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # LLM (OpenAI)
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
+    council_config_path: Path = Path("./council.yaml")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

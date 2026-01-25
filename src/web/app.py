@@ -1,6 +1,7 @@
 """FastAPI app for commander search UI."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Optional
 
 import logging
@@ -22,9 +23,12 @@ from src.database.models import (
 from src.database.seed_roles import seed_roles
 from src.engine.commander import create_commander_entry, find_commanders, is_commander_eligible, populate_commanders
 from src.engine.archetypes import compute_identity_from_deck, extract_identity, score_card_for_identity
+from src.engine.council.config import load_council_config
+from src.engine.council.training import council_training_opinions
 from src.engine.deck_builder import generate_deck
 from src.engine.metrics import compute_coherence_metrics
 from src.engine.validator import validate_deck
+from src.config import settings
 
 
 class CommanderResult(BaseModel):
@@ -54,6 +58,9 @@ class DeckGenerationRequest(BaseModel):
 
     commander_name: str
     use_llm_agent: bool = False
+    use_council: bool = False
+    council_config_path: Optional[str] = None
+    council_overrides: Optional[dict[str, Any]] = None
 
 
 class TrainingCard(BaseModel):
@@ -116,6 +123,37 @@ class TrainingStatsResponse(BaseModel):
 
     total_votes: int
     commanders: list[TrainingCommanderSummary]
+
+
+class CouncilOpinion(BaseModel):
+    """Council opinion payload for training analysis."""
+
+    agent_id: str
+    display_name: str
+    agent_type: str
+    weight: float
+    score: float
+    metrics: str
+    reason: str
+
+
+class CouncilAnalysisRequest(BaseModel):
+    """Council analysis request for a training card."""
+
+    session_id: int
+    card_id: int
+    council_config_path: Optional[str] = None
+    council_overrides: Optional[dict[str, Any]] = None
+    api_key: Optional[str] = None
+
+
+class CouncilAnalysisResponse(BaseModel):
+    """Council analysis response for a training card."""
+
+    session_id: int
+    commander_name: str
+    card_name: str
+    opinions: list[CouncilOpinion]
 
 
 class SynergyCardResult(BaseModel):
@@ -219,6 +257,11 @@ def search_commanders(
 def generate_deck_endpoint(request: DeckGenerationRequest) -> DeckGenerationResponse:
     """Generate a 100-card Commander deck."""
     with get_db() as db:
+        if request.use_council and not settings.openai_api_key:
+            raise HTTPException(
+                status_code=400,
+                detail="Council mode requires OPENAI_API_KEY to run LLM agents.",
+            )
         # Find commander
         commanders = find_commanders(db, name_query=request.commander_name, limit=1)
 
@@ -243,7 +286,16 @@ def generate_deck_endpoint(request: DeckGenerationRequest) -> DeckGenerationResp
         seed_roles(db)
 
         # Generate deck
-        deck = generate_deck(db, commander, constraints={"use_llm_agent": request.use_llm_agent})
+        deck = generate_deck(
+            db,
+            commander,
+            constraints={
+                "use_llm_agent": request.use_llm_agent,
+                "use_council": request.use_council,
+                "council_config_path": request.council_config_path,
+                "council_overrides": request.council_overrides,
+            },
+        )
 
         # Validate deck
         is_valid, errors = validate_deck(deck)
@@ -326,6 +378,49 @@ def training_session_start() -> TrainingSessionResponse:
         return TrainingSessionResponse(
             session_id=session.id,
             commander=to_training_card(commander_card),
+        )
+
+
+@app.post("/api/training/council/analyze", response_model=CouncilAnalysisResponse)
+def training_council_analyze(request: CouncilAnalysisRequest) -> CouncilAnalysisResponse:
+    """Analyze a training card using the council agents."""
+    with get_db() as db:
+        session = db.query(TrainingSession).filter(TrainingSession.id == request.session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Training session not found")
+
+        card = db.query(Card).filter(Card.id == request.card_id).first()
+        if not card:
+            raise HTTPException(status_code=404, detail="Card not found")
+
+        config = load_council_config(
+            config_path=None
+            if request.council_config_path is None
+            else Path(request.council_config_path),
+            overrides=request.council_overrides,
+        )
+        if (
+            any(agent.agent_type == "llm" for agent in config.agents)
+            and not (request.api_key or settings.openai_api_key)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Council analysis requires OPENAI_API_KEY to run LLM agents.",
+            )
+
+        opinions = council_training_opinions(
+            session.commander,
+            card,
+            config_path=request.council_config_path,
+            overrides=request.council_overrides,
+            api_key_override=request.api_key,
+        )
+
+        return CouncilAnalysisResponse(
+            session_id=request.session_id,
+            commander_name=session.commander.card.name,
+            card_name=card.name,
+            opinions=[CouncilOpinion(**opinion) for opinion in opinions],
         )
 
 

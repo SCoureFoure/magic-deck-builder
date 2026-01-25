@@ -1,0 +1,12 @@
+/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+INFO:     Started server process [9517]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49563 - "POST /api/training/session/start HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49564 - "GET /api/training/session/30/next HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49565 - "GET /api/training/stats HTTP/1.1" 200 OK
+INFO:httpx:HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:49567 - "POST /api/training/council/analyze HTTP/1.1" 200 OK

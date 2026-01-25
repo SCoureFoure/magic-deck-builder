@@ -1,0 +1,33 @@
+version: 1
+voting:
+  strategy: borda
+  top_k: 25
+agents:
+  - id: heuristic-core
+    display_name: Heuristic Core
+    type: heuristic
+    weight: 1.0
+    preferences:
+      theme_weight: 0.6
+      efficiency_weight: 0.2
+      budget_weight: 0.2
+  - id: llm-theme-focused
+    display_name: Theme-Focused LLM
+    type: llm
+    weight: 1.0
+    model: gpt-4o-mini
+    temperature: 0.4
+    preferences:
+      theme_weight: 0.75
+      efficiency_weight: 0.15
+      budget_weight: 0.10
+  - id: llm-price-sensitive
+    display_name: Price-Sensitive LLM
+    type: llm
+    weight: 1.0
+    model: gpt-4o-mini
+    temperature: 0.3
+    preferences:
+      theme_weight: 0.35
+      efficiency_weight: 0.15
+      budget_weight: 0.50

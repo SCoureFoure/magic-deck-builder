@@ -1,0 +1,160 @@
+"""Council agent implementations."""
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from typing import Iterable, Optional
+
+from langchain_openai import ChatOpenAI
+
+from src.database.models import Card
+from src.engine.archetypes import score_card_for_identity
+from src.engine.roles import classify_card_role
+from src.engine.council.config import AgentConfig, AgentPreferences
+from src.config import settings
+
+
+def _normalize_score(value: float) -> float:
+    if value < 0:
+        return 0.0
+    if value > 1:
+        return 1.0
+    return value
+
+
+def _price_score(price_usd: Optional[float], preferences: AgentPreferences) -> float:
+    if price_usd is None:
+        return 0.5
+    cap = preferences.price_cap_usd or 20.0
+    if cap <= 0:
+        return 0.0
+    return _normalize_score(1.0 - min(price_usd / cap, 1.0))
+
+
+def heuristic_rank_candidates(
+    candidates: list[Card],
+    role: str,
+    identity: Optional[dict[str, float]],
+    preferences: AgentPreferences,
+) -> list[str]:
+    scored: list[tuple[float, str]] = []
+    for card in candidates:
+        theme_score = score_card_for_identity(card, identity) if identity else 0.5
+        efficiency_score = _normalize_score(1.0 / (1.0 + max(card.cmc, 0.0)))
+        budget_score = _price_score(card.price_usd, preferences)
+        role_bonus = 0.1 if classify_card_role(card) == role else 0.0
+
+        total_weight = (
+            preferences.theme_weight
+            + preferences.efficiency_weight
+            + preferences.budget_weight
+        )
+        if total_weight <= 0:
+            total_weight = 1.0
+
+        weighted = (
+            theme_score * preferences.theme_weight
+            + efficiency_score * preferences.efficiency_weight
+            + budget_score * preferences.budget_weight
+        ) / total_weight
+
+        scored.append((weighted + role_bonus, card.name))
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [name for _, name in scored]
+
+
+def _candidate_snapshot(card: Card) -> dict[str, str | float | None]:
+    return {
+        "name": card.name,
+        "type": card.type_line,
+        "cmc": card.cmc,
+        "price_usd": card.price_usd,
+        "oracle": card.oracle_text or "",
+    }
+
+
+def _build_llm_prompt(
+    agent_id: str,
+    role: str,
+    commander_name: str,
+    commander_text: str,
+    deck_cards: list[Card],
+    candidates: list[Card],
+    preferences: AgentPreferences,
+) -> tuple[str, str]:
+    system_prompt = (
+        "You are a Commander deckbuilding council agent. "
+        "Follow the user preferences exactly. "
+        "Return ONLY a JSON array of card names in ranked order, best to worst."
+    )
+
+    deck_list = ", ".join(card.name for card in deck_cards[:40])
+    candidate_payload = [_candidate_snapshot(card) for card in candidates]
+
+    user_prompt = (
+        f"Agent ID: {agent_id}\n"
+        f"Role needed: {role}\n"
+        f"Commander: {commander_name}\n"
+        f"Commander text: {commander_text}\n"
+        f"Deck so far: {deck_list}\n"
+        f"Preferences: {json.dumps(asdict(preferences))}\n"
+        "Candidates (JSON list):\n"
+        f"{json.dumps(candidate_payload)}\n"
+        "Return ONLY a JSON array of card names."
+    )
+
+    return system_prompt, user_prompt
+
+
+def _parse_ranked_names(text: str) -> list[str]:
+    if not text:
+        return []
+    trimmed = text.strip()
+    start = trimmed.find("[")
+    end = trimmed.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        return []
+    try:
+        data = json.loads(trimmed[start : end + 1])
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(item).strip() for item in data if isinstance(item, str) and item.strip()]
+
+
+def llm_rank_candidates(
+    agent: AgentConfig,
+    role: str,
+    commander_name: str,
+    commander_text: str,
+    deck_cards: list[Card],
+    candidates: list[Card],
+) -> list[str]:
+    if not settings.openai_api_key:
+        return []
+
+    model_name = agent.model or settings.openai_model
+    llm = ChatOpenAI(
+        model=model_name,
+        temperature=agent.temperature,
+        api_key=settings.openai_api_key,
+    )
+
+    system_prompt, user_prompt = _build_llm_prompt(
+        agent.agent_id,
+        role,
+        commander_name,
+        commander_text,
+        deck_cards,
+        candidates,
+        agent.preferences,
+    )
+
+    response = llm.invoke([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ])
+
+    return _parse_ranked_names(getattr(response, "content", ""))
