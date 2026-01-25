@@ -12,7 +12,7 @@ from src.database.engine import get_db, init_db
 from src.engine.commander import find_commanders, is_commander_eligible, populate_commanders
 from src.engine.deck_builder import generate_deck
 from src.engine.validator import validate_deck
-from src.ingestion.bulk_ingest import download_and_ingest_bulk
+from src.ingestion.bulk_ingest import commander_legal_filter, download_and_ingest_bulk
 from src.ingestion.scryfall_client import ScryfallClient
 
 ingest_app = typer.Typer(help="Data ingestion commands")
@@ -130,6 +130,66 @@ def ingest_file(
             f"[green]✓[/green] Successfully ingested [bold]{card_count}[/bold] cards"
         )
 
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@ingest_app.command("small")
+def ingest_small(
+    limit: int = typer.Option(20000, "--limit", help="Max cards to ingest"),
+    bulk_type: str = typer.Option(
+        "oracle_cards", "--bulk", help="Bulk data type to ingest (oracle_cards, default_cards)"
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Force re-download even if cached"),
+    init_tables: bool = typer.Option(
+        True, "--init-tables/--no-init-tables", help="Initialize database tables if needed"
+    ),
+):
+    """Ingest a smaller commander-legal subset for lightweight demos.
+
+    Example:
+        python -m src.cli ingest small --limit 20000
+    """
+    console.print("[bold cyan]Magic Deck Builder - Small Ingestion[/bold cyan]")
+    console.print(f"Bulk type: [yellow]{bulk_type}[/yellow]")
+    console.print(f"Limit: [yellow]{limit}[/yellow]")
+    console.print(f"Force download: [yellow]{force}[/yellow]")
+    console.print()
+
+    if init_tables:
+        with console.status("[bold green]Initializing database tables..."):
+            init_db()
+        console.print("[green]✓[/green] Database tables initialized")
+
+    client = ScryfallClient()
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Fetching bulk data info...", total=None)
+            client.get_bulk_data_info()
+            progress.update(task, description=f"[green]✓[/green] Found {bulk_type} info")
+
+            with get_db() as db:
+                progress.update(
+                    task, description=f"Downloading and ingesting {bulk_type}..."
+                )
+                card_count = download_and_ingest_bulk(
+                    db,
+                    client,
+                    bulk_type=bulk_type,
+                    force_download=force,
+                    limit=limit,
+                    filter_fn=commander_legal_filter,
+                )
+
+        console.print(
+            f"[green]✓[/green] Successfully ingested [bold]{card_count}[/bold] cards"
+        )
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from src.database.models import Base, Card
 from src.ingestion.bulk_ingest import (
+    commander_legal_filter,
     ingest_bulk_file,
     map_card_data,
     select_bulk_download_url,
@@ -109,6 +110,32 @@ def test_ingest_bulk_file(db_session: Session, tmp_path: Path):
     assert processed == 1
     stored = db_session.query(Card).filter_by(scryfall_id="card-2").one()
     assert stored.name == "Bulk Card"
+
+
+def test_ingest_bulk_file_limit_and_filter(db_session: Session, tmp_path: Path):
+    """Ingest a filtered, limited subset of cards."""
+    bulk_path = tmp_path / "bulk.json"
+    bulk_path.write_text(
+        '['
+        '{"object":"card","id":"card-1","name":"Legal 1","type_line":"Artifact","cmc":1,'
+        '"color_identity":[],"legalities":{"commander":"legal"}},'
+        '{"object":"card","id":"card-2","name":"Illegal","type_line":"Artifact","cmc":1,'
+        '"color_identity":[],"legalities":{"commander":"not_legal"}},'
+        '{"object":"card","id":"card-3","name":"Legal 2","type_line":"Artifact","cmc":2,'
+        '"color_identity":[],"legalities":{"commander":"legal"}}'
+        ']'
+    )
+
+    processed = ingest_bulk_file(
+        db_session,
+        bulk_path,
+        limit=1,
+        filter_fn=commander_legal_filter,
+    )
+    assert processed == 1
+    cards = db_session.query(Card).all()
+    assert len(cards) == 1
+    assert cards[0].name == "Legal 1"
 
 
 def test_upsert_skips_non_card_objects(db_session: Session):

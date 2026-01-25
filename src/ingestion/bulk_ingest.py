@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 import ijson
 from sqlalchemy.orm import Session
@@ -58,12 +58,18 @@ def map_card_data(card_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def upsert_cards(
-    session: Session, card_iter: Iterable[dict[str, Any]], batch_size: int = 500
+    session: Session,
+    card_iter: Iterable[dict[str, Any]],
+    batch_size: int = 500,
+    limit: int | None = None,
+    filter_fn: Callable[[dict[str, Any]], bool] | None = None,
 ) -> int:
     """Insert or update cards from an iterable of Scryfall card data."""
     processed = 0
 
     for card_data in card_iter:
+        if filter_fn and not filter_fn(card_data):
+            continue
         if card_data.get("object") != "card":
             continue
         if not card_data.get("id"):
@@ -82,12 +88,19 @@ def upsert_cards(
         processed += 1
         if processed % batch_size == 0:
             session.commit()
+        if limit is not None and processed >= limit:
+            break
 
     session.commit()
     return processed
 
 
-def ingest_bulk_file(session: Session, bulk_path: Path) -> int:
+def ingest_bulk_file(
+    session: Session,
+    bulk_path: Path,
+    limit: int | None = None,
+    filter_fn: Callable[[dict[str, Any]], bool] | None = None,
+) -> int:
     """Ingest a local Scryfall bulk JSON file into the database."""
     with open(bulk_path, "rb") as handle:
         try:
@@ -101,7 +114,12 @@ def ingest_bulk_file(session: Session, bulk_path: Path) -> int:
 
         handle.seek(0)
         items = ijson.items(handle, "item")
-        return upsert_cards(session, items)
+        return upsert_cards(session, items, limit=limit, filter_fn=filter_fn)
+
+
+def commander_legal_filter(card_data: dict[str, Any]) -> bool:
+    legalities = card_data.get("legalities") or {}
+    return legalities.get("commander") == "legal"
 
 
 def download_and_ingest_bulk(
@@ -110,6 +128,8 @@ def download_and_ingest_bulk(
     bulk_type: str = "oracle_cards",
     output_dir: Path | None = None,
     force_download: bool = False,
+    limit: int | None = None,
+    filter_fn: Callable[[dict[str, Any]], bool] | None = None,
 ) -> int:
     """Download and ingest a Scryfall bulk data type."""
     bulk_info = client.get_bulk_data_info()
@@ -119,4 +139,4 @@ def download_and_ingest_bulk(
     output_path = output_dir / f"{bulk_type}.json"
     client.download_bulk_file(download_uri, output_path, force=force_download)
 
-    return ingest_bulk_file(session, output_path)
+    return ingest_bulk_file(session, output_path, limit=limit, filter_fn=filter_fn)

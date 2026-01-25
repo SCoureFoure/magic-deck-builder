@@ -38,6 +38,9 @@ python -m src.cli search commander "Atraxa"
 # Ingest Scryfall bulk data (auto-downloads and caches)
 python -m src.cli ingest bulk oracle_cards
 
+# Ingest a smaller commander-legal subset (useful for small DB limits)
+python -m src.cli ingest small --limit 20000
+
 # Ingest from a local file
 python -m src.cli ingest file ./data/oracle_cards.json
 

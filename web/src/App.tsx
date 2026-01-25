@@ -127,6 +127,19 @@ const STAGE_LABELS = {
   training: "Training — Synergy Labels",
 };
 type Stage = keyof typeof STAGE_LABELS;
+const API_BASE =
+  (import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE?.trim() ?? "";
+
+const apiUrl = (path: string) => {
+  if (!API_BASE) return path;
+  if (API_BASE.endsWith("/") && path.startsWith("/")) {
+    return `${API_BASE.slice(0, -1)}${path}`;
+  }
+  if (!API_BASE.endsWith("/") && !path.startsWith("/")) {
+    return `${API_BASE}/${path}`;
+  }
+  return `${API_BASE}${path}`;
+};
 
 function formatColors(colors: string[]): string {
   if (!colors.length) return "C";
@@ -218,7 +231,7 @@ export default function App() {
         params.set("populate", "true");
       }
 
-      const response = await fetch(`/api/commanders?${params.toString()}`);
+      const response = await fetch(apiUrl(`/api/commanders?${params.toString()}`));
       if (!response.ok) {
         let detail = "Search failed.";
         try {
@@ -270,7 +283,7 @@ export default function App() {
     setDeckData(null);
 
     try {
-      const response = await fetch("/api/decks/generate", {
+      const response = await fetch(apiUrl("/api/decks/generate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -311,9 +324,11 @@ export default function App() {
     setTopSynergyError(null);
     try {
       const response = await fetch(
-        `/api/commanders/${encodeURIComponent(
-          commanderName,
-        )}/synergy/top?limit=5&min_ratio=0.5`,
+        apiUrl(
+          `/api/commanders/${encodeURIComponent(
+            commanderName,
+          )}/synergy/top?limit=5&min_ratio=0.5`,
+        ),
       );
       if (!response.ok) {
         let detail = "Top synergy lookup failed.";
@@ -356,7 +371,9 @@ export default function App() {
     try {
       const params = new URLSearchParams({ query: synergyQuery.trim() });
       const response = await fetch(
-        `/api/commanders/${encodeURIComponent(selectedCommander.name)}/synergy?${params.toString()}`
+        apiUrl(
+          `/api/commanders/${encodeURIComponent(selectedCommander.name)}/synergy?${params.toString()}`,
+        ),
       );
       if (!response.ok) {
         let detail = "Synergy search failed.";
@@ -396,7 +413,7 @@ export default function App() {
     setCouncilOpinions([]);
     setCouncilError(null);
     try {
-      const response = await fetch("/api/training/session/start", { method: "POST" });
+      const response = await fetch(apiUrl("/api/training/session/start"), { method: "POST" });
       if (!response.ok) {
         let detail = "Training session failed.";
         try {
@@ -426,7 +443,7 @@ export default function App() {
 
   const fetchTrainingCard = async (sessionId: number) => {
     try {
-      const response = await fetch(`/api/training/session/${sessionId}/next`);
+      const response = await fetch(apiUrl(`/api/training/session/${sessionId}/next`));
       if (!response.ok) {
         let detail = "Training card failed.";
         try {
@@ -454,7 +471,7 @@ export default function App() {
 
   const fetchTrainingStats = async () => {
     try {
-      const response = await fetch("/api/training/stats");
+      const response = await fetch(apiUrl("/api/training/stats"));
       if (!response.ok) {
         return;
       }
@@ -470,7 +487,7 @@ export default function App() {
     setTrainingLoading(true);
     setTrainingError(null);
     try {
-      const response = await fetch("/api/training/session/vote", {
+      const response = await fetch(apiUrl("/api/training/session/vote"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -512,7 +529,7 @@ export default function App() {
     setCouncilError(null);
     setCouncilOpinions([]);
     try {
-      const response = await fetch("/api/training/council/analyze", {
+      const response = await fetch(apiUrl("/api/training/council/analyze"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

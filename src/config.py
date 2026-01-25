@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     council_config_path: Path = Path("./council.yaml")
 
+    # CORS (comma-separated origins)
+    cors_origins: str = "http://localhost:5173"
+
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Ensure cache directory exists
