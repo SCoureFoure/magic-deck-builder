@@ -185,7 +185,7 @@ class ScryfallClient:
         self._rate_limit()
 
         url = f"{self.BASE_URL}/cards/search"
-        with httpx.Client() as client:
+        with httpx.Client(timeout=30.0) as client:
             response = client.get(
                 url,
                 headers=self.headers,
