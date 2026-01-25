@@ -178,18 +178,21 @@ class ScryfallClient:
         self._write_cache(cache_key, data)
         return data
 
-    def search_cards(
-        self, query: str, page: int = 1
-    ) -> dict[str, Any]:
+    def search_cards(self, query: str, page: int = 1) -> dict[str, Any]:
         """Search cards using Scryfall search endpoint."""
-        self._rate_limit()
-
         url = f"{self.BASE_URL}/cards/search"
-        with httpx.Client(timeout=30.0) as client:
-            response = client.get(
-                url,
-                headers=self.headers,
-                params={"q": query, "page": page},
-            )
-            response.raise_for_status()
-            return response.json()
+        for attempt in range(3):
+            self._rate_limit()
+            try:
+                with httpx.Client(timeout=60.0) as client:
+                    response = client.get(
+                        url,
+                        headers=self.headers,
+                        params={"q": query, "page": page},
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            except httpx.ReadTimeout:
+                if attempt == 2:
+                    raise
+                time.sleep(1.0)
