@@ -90,15 +90,23 @@ def find_commanders(
     # Cards with "can be your commander" text
     can_be_commander = query.filter(Card.oracle_text.ilike("%can be your commander%"))
 
-    # Combine results
-    all_cards = legendary_creatures.union(can_be_commander).limit(limit * 2).all()
+    # Combine results using IDs only to avoid JSON equality issues in Postgres
+    legendary_ids = legendary_creatures.with_entities(Card.id)
+    commander_ids = can_be_commander.with_entities(Card.id)
+    raw_ids = (
+        legendary_ids.union(commander_ids)
+        .limit(limit * 4)
+        .all()
+    )
+    candidate_ids = [row[0] for row in raw_ids]
+
+    if not candidate_ids:
+        return []
+
+    all_cards = session.query(Card).filter(Card.id.in_(candidate_ids)).all()
 
     # Filter for commander legality in Python (SQLite-compatible)
-    results = [
-        card
-        for card in all_cards
-        if card.legalities.get("commander") == "legal"
-    ]
+    results = [card for card in all_cards if card.legalities.get("commander") == "legal"]
 
     unique: list[Card] = []
     seen: set[str] = set()
