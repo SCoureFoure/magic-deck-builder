@@ -257,7 +257,8 @@ export default function App() {
       setLastQuery(data.query);
     } catch (err) {
       if (err instanceof TypeError) {
-        setError("Could not reach API. Is the backend running at http://localhost:8000?");
+        const hint = API_BASE || "http://localhost:8000";
+        setError(`Could not reach API. Is the backend running at ${hint}?`);
       } else {
         setError(err instanceof Error ? err.message : "Unexpected error.");
       }
@@ -310,7 +311,8 @@ export default function App() {
       setDeckData(data);
     } catch (err) {
       if (err instanceof TypeError) {
-        setDeckError("Could not reach API. Is the backend running at http://localhost:8000?");
+        const hint = API_BASE || "http://localhost:8000";
+        setDeckError(`Could not reach API. Is the backend running at ${hint}?`);
       } else {
         setDeckError(err instanceof Error ? err.message : "Unexpected error.");
       }
@@ -347,9 +349,8 @@ export default function App() {
       setTopSynergies(data);
     } catch (err) {
       if (err instanceof TypeError) {
-        setTopSynergyError(
-          "Could not reach API. Is the backend running at http://localhost:8000?",
-        );
+        const hint = API_BASE || "http://localhost:8000";
+        setTopSynergyError(`Could not reach API. Is the backend running at ${hint}?`);
       } else {
         setTopSynergyError(err instanceof Error ? err.message : "Unexpected error.");
       }
@@ -391,7 +392,8 @@ export default function App() {
       setSynergyResults(data);
     } catch (err) {
       if (err instanceof TypeError) {
-        setSynergyError("Could not reach API. Is the backend running at http://localhost:8000?");
+        const hint = API_BASE || "http://localhost:8000";
+        setSynergyError(`Could not reach API. Is the backend running at ${hint}?`);
       } else {
         setSynergyError(err instanceof Error ? err.message : "Unexpected error.");
       }
@@ -432,7 +434,8 @@ export default function App() {
       await fetchTrainingStats();
     } catch (err) {
       if (err instanceof TypeError) {
-        setTrainingError("Could not reach API. Is the backend running at http://localhost:8000?");
+        const hint = API_BASE || "http://localhost:8000";
+        setTrainingError(`Could not reach API. Is the backend running at ${hint}?`);
       } else {
         setTrainingError(err instanceof Error ? err.message : "Unexpected error.");
       }
@@ -462,7 +465,8 @@ export default function App() {
       setCouncilError(null);
     } catch (err) {
       if (err instanceof TypeError) {
-        setTrainingError("Could not reach API. Is the backend running at http://localhost:8000?");
+        const hint = API_BASE || "http://localhost:8000";
+        setTrainingError(`Could not reach API. Is the backend running at ${hint}?`);
       } else {
         setTrainingError(err instanceof Error ? err.message : "Unexpected error.");
       }
@@ -554,7 +558,8 @@ export default function App() {
       setCouncilOpinions(data.opinions);
     } catch (err) {
       if (err instanceof TypeError) {
-        setCouncilError("Could not reach API. Is the backend running at http://localhost:8000?");
+        const hint = API_BASE || "http://localhost:8000";
+        setCouncilError(`Could not reach API. Is the backend running at ${hint}?`);
       } else {
         setCouncilError(err instanceof Error ? err.message : "Unexpected error.");
       }

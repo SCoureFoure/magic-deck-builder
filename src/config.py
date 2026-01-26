@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
+    def cors_allows_credentials(self) -> bool:
+        origins = self.cors_origin_list()
+        return "*" not in origins
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Ensure cache directory exists
