@@ -203,6 +203,8 @@ def ingest_small(
 def ingest_sample(
     limit: int = typer.Option(2000, "--limit", help="Max cards to ingest"),
     query: str = typer.Option("legal:commander", "--query", help="Scryfall search query"),
+    start_page: int = typer.Option(1, "--start-page", help="Start page for sequential ingest"),
+    random_pages: int = typer.Option(0, "--random-pages", help="Random pages to sample"),
     init_tables: bool = typer.Option(
         True, "--init-tables/--no-init-tables", help="Initialize database tables if needed"
     ),
@@ -211,6 +213,10 @@ def ingest_sample(
     console.print("[bold cyan]Magic Deck Builder - Sample Ingestion[/bold cyan]")
     console.print(f"Query: [yellow]{query}[/yellow]")
     console.print(f"Limit: [yellow]{limit}[/yellow]")
+    if random_pages > 0:
+        console.print(f"Random pages: [yellow]{random_pages}[/yellow]")
+    else:
+        console.print(f"Start page: [yellow]{start_page}[/yellow]")
     console.print()
 
     if init_tables:
@@ -228,7 +234,14 @@ def ingest_sample(
         ) as progress:
             task = progress.add_task("Searching Scryfall...", total=None)
             with get_db() as db:
-                card_count = ingest_sample_search(db, client, query=query, limit=limit)
+                card_count = ingest_sample_search(
+                    db,
+                    client,
+                    query=query,
+                    limit=limit,
+                    start_page=start_page,
+                    random_pages=random_pages,
+                )
             progress.update(task, description="[green]✓[/green] Sample ingest complete")
 
         console.print(

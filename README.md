@@ -44,6 +44,9 @@ python -m src.cli ingest small --limit 20000
 # Ingest a very small sample via Scryfall search (fastest option)
 python -m src.cli ingest sample --limit 2000
 
+# Sample random pages for more variety
+python -m src.cli ingest sample --limit 2000 --random-pages 3
+
 # Ingest from a local file
 python -m src.cli ingest file ./data/oracle_cards.json
 

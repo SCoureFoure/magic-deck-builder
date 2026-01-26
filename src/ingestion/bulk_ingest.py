@@ -147,10 +147,41 @@ def ingest_sample_search(
     client: ScryfallClient,
     query: str,
     limit: int,
+    start_page: int = 1,
+    random_pages: int = 0,
 ) -> int:
     """Ingest a limited set of cards using Scryfall search."""
     processed = 0
-    page = 1
+    page = max(start_page, 1)
+
+    if random_pages > 0:
+        first = client.search_cards(query, page=1)
+        cards = first.get("data", [])
+        if not cards:
+            return 0
+        remaining = limit - processed
+        batch = cards[:remaining]
+        processed += upsert_cards(session, batch)
+
+        per_page = len(cards)
+        total_cards = int(first.get("total_cards") or per_page)
+        total_pages = max((total_cards + per_page - 1) // per_page, 1)
+
+        import random
+
+        pages = list(range(2, total_pages + 1))
+        random.shuffle(pages)
+        for page in pages[:random_pages]:
+            if processed >= limit:
+                break
+            payload = client.search_cards(query, page=page)
+            cards = payload.get("data", [])
+            if not cards:
+                continue
+            remaining = limit - processed
+            batch = cards[:remaining]
+            processed += upsert_cards(session, batch)
+        return processed
 
     while processed < limit:
         payload = client.search_cards(query, page=page)
