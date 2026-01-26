@@ -29,6 +29,8 @@ from src.engine.deck_builder import generate_deck
 from src.engine.metrics import compute_coherence_metrics
 from src.engine.validator import validate_deck
 from src.config import settings
+from src.ingestion.bulk_ingest import ingest_search_results
+from src.ingestion.scryfall_client import ScryfallClient
 
 
 class CommanderResult(BaseModel):
@@ -227,6 +229,19 @@ def search_commanders(
         if populate:
             populate_commanders(db)
         results = find_commanders(db, name_query=query, limit=limit)
+
+        if not results and settings.enable_scryfall_fallback:
+            client = ScryfallClient()
+            try:
+                ingest_search_results(
+                    db,
+                    client,
+                    query=f'name:"{query}"',
+                    limit=settings.scryfall_fallback_limit,
+                )
+                results = find_commanders(db, name_query=query, limit=limit)
+            except Exception:
+                results = []
 
         if not results:
             raise HTTPException(status_code=404, detail="No commanders found")

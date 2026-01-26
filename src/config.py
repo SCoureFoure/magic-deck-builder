@@ -36,6 +36,10 @@ class Settings(BaseSettings):
         origins = self.cors_origin_list()
         return "*" not in origins
 
+    # Scryfall fallback search
+    enable_scryfall_fallback: bool = True
+    scryfall_fallback_limit: int = 50
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Ensure cache directory exists

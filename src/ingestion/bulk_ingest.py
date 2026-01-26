@@ -167,3 +167,30 @@ def ingest_sample_search(
         page += 1
 
     return processed
+
+
+def ingest_search_results(
+    session: Session,
+    client: ScryfallClient,
+    query: str,
+    limit: int,
+) -> int:
+    """Ingest a limited set of cards from a Scryfall search query."""
+    processed = 0
+    page = 1
+
+    while processed < limit:
+        payload = client.search_cards(query, page=page)
+        cards = payload.get("data", [])
+        if not cards:
+            break
+
+        remaining = limit - processed
+        batch = cards[:remaining]
+        processed += upsert_cards(session, batch)
+
+        if not payload.get("has_more"):
+            break
+        page += 1
+
+    return processed
