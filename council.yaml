@@ -2,6 +2,10 @@ version: 1
 voting:
   strategy: borda
   top_k: 25
+routing:
+  strategy: parallel
+  agent_ids: []
+  debate_adjudicator_id: null
 agents:
   - id: heuristic-core
     display_name: Heuristic Core

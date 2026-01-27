@@ -4,37 +4,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from langgraph.graph import END, StateGraph
-from typing_extensions import Annotated, TypedDict
 from sqlalchemy.orm import Session
 
 from src.database.models import Card, Commander
 from src.engine.archetypes import compute_identity_from_deck
 from src.engine.roles import classify_card_role
-from src.engine.council.agents import heuristic_rank_candidates, llm_rank_candidates
-from src.engine.council.config import CouncilConfig, load_council_config
-from src.engine.council.voting import aggregate_rankings
-
-
-def _merge_rankings(
-    existing: dict[str, list[str]] | None,
-    incoming: dict[str, list[str]] | None,
-) -> dict[str, list[str]]:
-    merged = dict(existing or {})
-    merged.update(incoming or {})
-    return merged
-
-
-class CouncilState(TypedDict):
-    role: str
-    commander_name: str
-    commander_text: str
-    deck_cards: list[Card]
-    candidates: list[Card]
-    identity: Optional[dict[str, float]]
-    agent_rankings: Annotated[dict[str, list[str]], _merge_rankings]
-    final_ranking: list[str]
-    config: CouncilConfig
+from src.engine.council.config import load_council_config
+from src.engine.council.routing import CouncilRouter
 
 
 def _build_candidate_pool(
@@ -67,65 +43,9 @@ def _build_candidate_pool(
     return eligible
 
 
-def _agent_node(agent_id: str, agent_type: str):
-    def run(state: CouncilState) -> dict[str, dict[str, list[str]]]:
-        agent = next(
-            (cfg for cfg in state["config"].agents if cfg.agent_id == agent_id),
-            None,
-        )
-        if not agent:
-            return {"agent_rankings": {agent_id: []}}
-
-        if agent_type == "heuristic":
-            ranked = heuristic_rank_candidates(
-                state["candidates"],
-                state["role"],
-                state["identity"],
-                agent.preferences,
-            )
-        else:
-            ranked = llm_rank_candidates(
-                agent,
-                state["role"],
-                state["commander_name"],
-                state["commander_text"],
-                state["deck_cards"],
-                state["candidates"],
-            )
-        return {"agent_rankings": {agent_id: ranked}}
-
-    return run
-
-
-def _aggregate_node(state: CouncilState) -> dict[str, list[str]]:
-    weights = {agent.agent_id: agent.weight for agent in state["config"].agents}
-    voting = state["config"].voting
-    final = aggregate_rankings(
-        state.get("agent_rankings", {}),
-        weights,
-        voting.strategy,
-        voting.top_k,
-    )
-    return {"final_ranking": final}
-
-
-def build_council_graph(config: CouncilConfig) -> StateGraph:
-    graph = StateGraph(CouncilState)
-
-    graph.add_node("start", lambda state: {})
-    graph.add_node("aggregate", _aggregate_node)
-
-    for agent in config.agents:
-        graph.add_node(
-            f"agent_{agent.agent_id}",
-            _agent_node(agent.agent_id, agent.agent_type),
-        )
-        graph.add_edge("start", f"agent_{agent.agent_id}")
-        graph.add_edge(f"agent_{agent.agent_id}", "aggregate")
-    graph.set_entry_point("start")
-    graph.add_edge("aggregate", END)
-
-    return graph.compile()
+def build_council_graph(config) -> object:
+    router = CouncilRouter(config)
+    return router.build_graph()
 
 
 def select_cards_with_council(
@@ -159,7 +79,7 @@ def select_cards_with_council(
     identity = compute_identity_from_deck(commander.card, deck_cards)
 
     graph = build_council_graph(config)
-    result: CouncilState = graph.invoke(
+    result = graph.invoke(
         {
             "role": role,
             "commander_name": commander.card.name,

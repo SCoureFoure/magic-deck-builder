@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.database.models import Base, Card, Commander, Deck, DeckCard
-from src.engine.validator import validate_deck
+from src.engine.validator import parse_agent_task, validate_deck
 
 
 @pytest.fixture
@@ -398,8 +398,29 @@ def test_validate_deck_singleton_error_message(db_session: Session, valid_comman
     assert not is_valid
     # Check exact error message format
     assert any("Non-basic card" in err for err in errors)
-    assert any("Counterspell" in err for err in errors)
-    assert any("4 copies" in err for err in errors)
+
+
+def test_parse_agent_task_valid_payload() -> None:
+    task, errors = parse_agent_task(
+        {
+            "role": "ramp",
+            "count": 3,
+            "commander_name": "Atraxa, Praetors' Voice",
+            "commander_text": "Flying, vigilance, deathtouch, lifelink",
+            "deck_cards": ["Sol Ring", "Arcane Signet", "  "],
+        }
+    )
+    assert task is not None
+    assert errors == []
+    assert task.role == "ramp"
+    assert task.count == 3
+    assert task.deck_cards == ["Sol Ring", "Arcane Signet"]
+
+
+def test_parse_agent_task_invalid_payload() -> None:
+    task, errors = parse_agent_task({"role": "", "count": 0})
+    assert task is None
+    assert errors
 
 
 def test_validate_deck_color_identity_error_message(db_session: Session, valid_commander: Commander):

@@ -2,40 +2,24 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 import logging
 from typing import Iterable, Optional
 
 import httpx
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from src.config import settings
 from src.database.models import Card, Commander, LLMRun
-from src.engine.roles import classify_card_role
+from src.engine.brief import AgentTask, SearchQuery
+from src.engine.roles import classify_card_role, get_role_description
 from src.engine.text_vectorizer import compute_similarity
+from src.engine.validator import parse_agent_task
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class LLMRequest:
-    role: str
-    count: int
-    commander_name: str
-    commander_text: str
-    deck_cards: list[str]
-
-
-@dataclass(frozen=True)
-class SearchQuery:
-    oracle_contains: list[str]
-    type_contains: list[str]
-    cmc_min: Optional[float]
-    cmc_max: Optional[float]
-    colors: list[str]
-
-
-def build_search_prompt(request: LLMRequest) -> str:
+def build_search_prompt(request: AgentTask) -> str:
     """Build a strict JSON-only prompt for search queries."""
     deck_list = ", ".join(request.deck_cards[:40])
     return (
@@ -43,6 +27,7 @@ def build_search_prompt(request: LLMRequest) -> str:
         "Return ONLY a JSON array of search objects, with no extra text.\n"
         "Each object must use these keys: oracle_contains (list), type_contains (list), "
         "cmc_min (number or null), cmc_max (number or null), colors (list).\n\n"
+        f"Role definition: {get_role_description(request.role)}\n"
         f"Commander: {request.commander_name}\n"
         f"Commander text: {request.commander_text}\n"
         f"Deck so far (names): {deck_list}\n"
@@ -51,13 +36,14 @@ def build_search_prompt(request: LLMRequest) -> str:
     )
 
 
-def build_ranking_prompt(request: LLMRequest, candidates: list[Card]) -> str:
+def build_ranking_prompt(request: AgentTask, candidates: list[Card]) -> str:
     """Build a strict JSON-only prompt for ranking card names."""
     deck_list = ", ".join(request.deck_cards[:40])
     candidate_list = ", ".join(card.name for card in candidates[:60])
     return (
         "You are a Commander deckbuilding assistant.\n"
         "Return ONLY a JSON array of card names (strings), ordered best to worst.\n\n"
+        f"Role definition: {get_role_description(request.role)}\n"
         f"Commander: {request.commander_name}\n"
         f"Commander text: {request.commander_text}\n"
         f"Deck so far (names): {deck_list}\n"
@@ -107,24 +93,10 @@ def parse_search_queries(response_text: str) -> list[SearchQuery]:
     for item in data:
         if not isinstance(item, dict):
             continue
-        oracle_contains = item.get("oracle_contains") or []
-        type_contains = item.get("type_contains") or []
-        cmc_min = item.get("cmc_min")
-        cmc_max = item.get("cmc_max")
-        colors = item.get("colors") or []
-        if not isinstance(oracle_contains, list) or not isinstance(type_contains, list):
+        try:
+            queries.append(SearchQuery(**item))
+        except ValidationError:
             continue
-        if not isinstance(colors, list):
-            continue
-        queries.append(
-            SearchQuery(
-                oracle_contains=[str(x).lower() for x in oracle_contains if str(x).strip()],
-                type_contains=[str(x).lower() for x in type_contains if str(x).strip()],
-                cmc_min=float(cmc_min) if cmc_min is not None else None,
-                cmc_max=float(cmc_max) if cmc_max is not None else None,
-                colors=[str(x).upper() for x in colors if str(x).strip()],
-            )
-        )
     return queries
 
 
@@ -228,15 +200,20 @@ def suggest_cards_for_role(
     """Suggest cards via LLM search + ranking, then validate against database and role."""
     commander_card = commander.card
     deck_names = [card.name for card in deck_cards if card.id not in exclude_ids]
-    search_prompt = build_search_prompt(
-        LLMRequest(
-            role=role,
-            count=count,
-            commander_name=commander_card.name,
-            commander_text=commander_card.oracle_text or "",
-            deck_cards=deck_names,
-        )
+    task, task_errors = parse_agent_task(
+        {
+            "role": role,
+            "count": count,
+            "commander_name": commander_card.name,
+            "commander_text": commander_card.oracle_text or "",
+            "deck_cards": deck_names,
+        }
     )
+    if not task:
+        logger.info("LLM request invalid: role=%s errors=%s", role, task_errors)
+        return []
+
+    search_prompt = build_search_prompt(task)
 
     logger.info("LLM search start: role=%s count=%s commander=%s", role, count, commander_card.name)
     search_response = _call_openai(
@@ -284,16 +261,7 @@ def suggest_cards_for_role(
     if not candidates:
         return []
 
-    rank_prompt = build_ranking_prompt(
-        LLMRequest(
-            role=role,
-            count=count,
-            commander_name=commander_card.name,
-            commander_text=commander_card.oracle_text or "",
-            deck_cards=deck_names,
-        ),
-        candidates,
-    )
+    rank_prompt = build_ranking_prompt(task, candidates)
     rank_response = _call_openai(
         rank_prompt,
         system_prompt=(

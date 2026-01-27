@@ -5,8 +5,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-import yaml
-
 from src.config import settings
 
 
@@ -36,9 +34,17 @@ class VotingConfig:
 
 
 @dataclass(frozen=True)
+class RoutingConfig:
+    strategy: str = "parallel"  # "parallel", "sequential", "debate"
+    agent_ids: list[str] = field(default_factory=list)
+    debate_adjudicator_id: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class CouncilConfig:
     version: int = 1
     voting: VotingConfig = field(default_factory=VotingConfig)
+    routing: RoutingConfig = field(default_factory=RoutingConfig)
     agents: list[AgentConfig] = field(default_factory=list)
 
 
@@ -92,12 +98,24 @@ def _parse_config(data: dict[str, Any]) -> CouncilConfig:
         top_k=int(voting_data.get("top_k", 25)),
     )
 
+    routing_data = data.get("routing", {}) if isinstance(data, dict) else {}
+    routing = RoutingConfig(
+        strategy=str(routing_data.get("strategy", "parallel")),
+        agent_ids=[str(agent_id) for agent_id in routing_data.get("agent_ids", []) or []],
+        debate_adjudicator_id=(
+            str(routing_data["debate_adjudicator_id"])
+            if routing_data.get("debate_adjudicator_id") is not None
+            else None
+        ),
+    )
+
     agents_data = data.get("agents", []) if isinstance(data, dict) else []
     agents = [_parse_agent(agent) for agent in agents_data]
 
     return CouncilConfig(
         version=int(data.get("version", 1)) if isinstance(data, dict) else 1,
         voting=voting,
+        routing=routing,
         agents=agents,
     )
 
@@ -106,6 +124,8 @@ def load_council_config(
     config_path: Optional[Path] = None,
     overrides: Optional[dict[str, Any]] = None,
 ) -> CouncilConfig:
+    import yaml
+
     path = config_path or settings.council_config_path
     data: dict[str, Any] = {}
 

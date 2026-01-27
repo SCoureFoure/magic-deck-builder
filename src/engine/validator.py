@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from collections import Counter
 
+from pydantic import TypeAdapter, ValidationError
+
 from src.database.models import Deck
+from src.engine.brief import AgentTask
 
 
 def validate_deck(deck: Deck) -> tuple[bool, list[str]]:
@@ -63,3 +66,13 @@ def validate_deck(deck: Deck) -> tuple[bool, list[str]]:
 
     is_valid = len(errors) == 0
     return is_valid, errors
+
+
+def parse_agent_task(data: dict[str, object]) -> tuple[AgentTask | None, list[str]]:
+    """Validate and parse agent task inputs from arbitrary payloads."""
+    adapter = TypeAdapter(AgentTask)
+    try:
+        task = adapter.validate_python(data)
+    except ValidationError as exc:
+        return None, [error.get("msg", "Invalid agent task") for error in exc.errors()]
+    return task, []

@@ -9,8 +9,9 @@ from langchain_openai import ChatOpenAI
 
 from src.database.models import Card
 from src.engine.archetypes import score_card_for_identity
-from src.engine.roles import classify_card_role
+from src.engine.roles import classify_card_role, get_role_description
 from src.engine.council.config import AgentConfig, AgentPreferences
+from src.engine.validator import parse_agent_task
 from src.config import settings
 
 
@@ -95,6 +96,7 @@ def _build_llm_prompt(
     user_prompt = (
         f"Agent ID: {agent_id}\n"
         f"Role needed: {role}\n"
+        f"Role definition: {get_role_description(role)}\n"
         f"Commander: {commander_name}\n"
         f"Commander text: {commander_text}\n"
         f"Deck so far: {deck_list}\n"
@@ -133,6 +135,17 @@ def llm_rank_candidates(
     candidates: list[Card],
 ) -> list[str]:
     if not settings.openai_api_key:
+        return []
+    task, _ = parse_agent_task(
+        {
+            "role": role,
+            "count": max(len(candidates), 1),
+            "commander_name": commander_name,
+            "commander_text": commander_text,
+            "deck_cards": [card.name for card in deck_cards],
+        }
+    )
+    if not task:
         return []
 
     model_name = agent.model or settings.openai_model

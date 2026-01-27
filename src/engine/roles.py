@@ -3,6 +3,21 @@ from __future__ import annotations
 
 from src.database.models import Card
 
+ROLE_DESCRIPTIONS: dict[str, str] = {
+    "lands": "Mana-producing or mana-fixing lands.",
+    "ramp": "Acceleration pieces that increase mana production or land count.",
+    "draw": "Repeatable or burst card draw and card advantage.",
+    "removal": "Targeted or mass removal, interaction, or disruption.",
+    "wincons": "Primary finishers or explicit win conditions.",
+    "synergy": "Theme enablers and commander-specific synergies.",
+    "flex": "Utility slots that cover gaps not captured by other roles.",
+}
+
+
+def get_role_description(role: str) -> str:
+    """Return a short description for a deck role."""
+    return ROLE_DESCRIPTIONS.get(role, "General support for the deck plan.")
+
 
 def classify_card_role(card: Card) -> str:
     """Classify a card into a deck role based on its properties.

@@ -22,6 +22,8 @@ build/
 
 # Data and cache
 data/cache/
+data/*.log
+data/*.db
 
 
 # Web

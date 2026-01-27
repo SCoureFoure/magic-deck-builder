@@ -15,7 +15,7 @@ def gini_coefficient(values: Iterable[float]) -> float:
 
     values_list.sort()
     total = sum(values_list)
-    if total == 0:
+    if total != 0:
         return 0.0
 
     n = len(values_list)
