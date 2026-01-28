@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from dataclasses import asdict
 from typing import Iterable, Optional
 
 import httpx
@@ -12,6 +14,14 @@ from sqlalchemy.orm import Session
 from src.config import settings
 from src.database.models import Card, Commander, LLMRun
 from src.engine.brief import AgentTask, SearchQuery
+from src.engine.context import (
+    AgentContextConfig,
+    SourceAttribution,
+    build_candidate_context,
+    build_deck_context,
+    summarize_context_config,
+)
+from src.engine.observability import estimate_tokens, log_event
 from src.engine.roles import classify_card_role, get_role_description
 from src.engine.text_vectorizer import compute_similarity
 from src.engine.validator import parse_agent_task
@@ -19,33 +29,44 @@ from src.engine.validator import parse_agent_task
 logger = logging.getLogger(__name__)
 
 
-def build_search_prompt(request: AgentTask) -> str:
+def build_search_prompt(
+    request: AgentTask, context_config: AgentContextConfig | None = None
+) -> str:
     """Build a strict JSON-only prompt for search queries."""
-    deck_list = ", ".join(request.deck_cards[:40])
+    config = context_config or AgentContextConfig()
+    deck_context = build_deck_context(request, config)
+    deck_list = ", ".join(deck_context.deck_cards)
     return (
         "You are a Commander deckbuilding assistant.\n"
         "Return ONLY a JSON array of search objects, with no extra text.\n"
         "Each object must use these keys: oracle_contains (list), type_contains (list), "
         "cmc_min (number or null), cmc_max (number or null), colors (list).\n\n"
         f"Role definition: {get_role_description(request.role)}\n"
-        f"Commander: {request.commander_name}\n"
-        f"Commander text: {request.commander_text}\n"
+        f"Commander: {deck_context.commander_name}\n"
+        f"Commander text: {deck_context.commander_text}\n"
         f"Deck so far (names): {deck_list}\n"
         f"Role needed: {request.role}\n"
         f"Count: {request.count}\n"
     )
 
 
-def build_ranking_prompt(request: AgentTask, candidates: list[Card]) -> str:
+def build_ranking_prompt(
+    request: AgentTask,
+    candidates: list[Card],
+    context_config: AgentContextConfig | None = None,
+) -> str:
     """Build a strict JSON-only prompt for ranking card names."""
-    deck_list = ", ".join(request.deck_cards[:40])
-    candidate_list = ", ".join(card.name for card in candidates[:60])
+    config = context_config or AgentContextConfig()
+    deck_context = build_deck_context(request, config)
+    candidate_context = build_candidate_context(candidates, config)
+    deck_list = ", ".join(deck_context.deck_cards)
+    candidate_list = ", ".join(card.name for card in candidate_context.candidates)
     return (
         "You are a Commander deckbuilding assistant.\n"
         "Return ONLY a JSON array of card names (strings), ordered best to worst.\n\n"
         f"Role definition: {get_role_description(request.role)}\n"
-        f"Commander: {request.commander_name}\n"
-        f"Commander text: {request.commander_text}\n"
+        f"Commander: {deck_context.commander_name}\n"
+        f"Commander text: {deck_context.commander_text}\n"
         f"Deck so far (names): {deck_list}\n"
         f"Role needed: {request.role}\n"
         f"Candidates: {candidate_list}\n"
@@ -104,6 +125,7 @@ def _call_openai(prompt: str, system_prompt: str, temperature: float) -> str | N
     if not settings.openai_api_key:
         return None
 
+    started = time.monotonic()
     payload = {
         "model": settings.openai_model,
         "messages": [
@@ -127,10 +149,32 @@ def _call_openai(prompt: str, system_prompt: str, temperature: float) -> str | N
         )
         response.raise_for_status()
     except httpx.HTTPError:
+        duration_ms = int((time.monotonic() - started) * 1000)
+        log_event(
+            "llm_call",
+            {
+                "model": settings.openai_model,
+                "success": False,
+                "duration_ms": duration_ms,
+                "prompt_tokens_est": estimate_tokens(system_prompt + prompt),
+            },
+        )
         return None
 
     data = response.json()
-    return data["choices"][0]["message"]["content"]
+    content = data["choices"][0]["message"]["content"]
+    duration_ms = int((time.monotonic() - started) * 1000)
+    log_event(
+        "llm_call",
+        {
+            "model": settings.openai_model,
+            "success": True,
+            "duration_ms": duration_ms,
+            "prompt_tokens_est": estimate_tokens(system_prompt + prompt),
+            "response_tokens_est": estimate_tokens(content),
+        },
+    )
+    return content
 
 
 def _log_llm_run(
@@ -188,7 +232,7 @@ def _search_cards(
     return results
 
 
-def suggest_cards_for_role(
+def _suggest_cards_for_role(
     session: Session,
     deck_id: int,
     commander: Commander,
@@ -196,8 +240,10 @@ def suggest_cards_for_role(
     role: str,
     count: int,
     exclude_ids: set[int],
-) -> list[Card]:
+    context_config: AgentContextConfig | None = None,
+) -> tuple[list[Card], list[SourceAttribution]]:
     """Suggest cards via LLM search + ranking, then validate against database and role."""
+    context_config = context_config or AgentContextConfig()
     commander_card = commander.card
     deck_names = [card.name for card in deck_cards if card.id not in exclude_ids]
     task, task_errors = parse_agent_task(
@@ -211,9 +257,15 @@ def suggest_cards_for_role(
     )
     if not task:
         logger.info("LLM request invalid: role=%s errors=%s", role, task_errors)
-        return []
+        return [], []
 
-    search_prompt = build_search_prompt(task)
+    logger.info(
+        "LLM context config: role=%s config=%s",
+        role,
+        json.dumps(summarize_context_config(context_config)),
+    )
+
+    search_prompt = build_search_prompt(task, context_config)
 
     logger.info("LLM search start: role=%s count=%s commander=%s", role, count, commander_card.name)
     search_response = _call_openai(
@@ -238,11 +290,13 @@ def suggest_cards_for_role(
     queries = parse_search_queries(search_response or "")
     logger.info("LLM search parsed queries: role=%s queries=%s", role, len(queries))
     if not queries:
-        return []
+        return [], []
 
     commander_colors = set(commander.color_identity or [])
     candidates: list[Card] = []
     seen_ids: set[int] = set()
+    source_attributions: list[SourceAttribution] = []
+    max_attribution_cards = min(context_config.budget.max_candidates, 100)
     for query in queries:
         results = _search_cards(
             session=session,
@@ -251,6 +305,15 @@ def suggest_cards_for_role(
             exclude_ids=exclude_ids,
             limit=50,
         )
+        if results:
+            source_attributions.append(
+                SourceAttribution(
+                    source_type="llm_search_query",
+                    details={"query": asdict(query)},
+                    card_ids=[card.id for card in results[:max_attribution_cards]],
+                    card_names=[card.name for card in results[:max_attribution_cards]],
+                )
+            )
         for card in results:
             if card.id in seen_ids:
                 continue
@@ -259,9 +322,17 @@ def suggest_cards_for_role(
 
     logger.info("LLM search candidates: role=%s candidates=%s", role, len(candidates))
     if not candidates:
-        return []
+        return [], []
 
-    rank_prompt = build_ranking_prompt(task, candidates)
+    candidate_context = build_candidate_context(candidates, context_config)
+    if source_attributions:
+        logger.info(
+            "LLM candidate sources: role=%s sources=%s",
+            role,
+            json.dumps([asdict(item) for item in source_attributions]),
+        )
+
+    rank_prompt = build_ranking_prompt(task, candidate_context.candidates, context_config)
     rank_response = _call_openai(
         rank_prompt,
         system_prompt=(
@@ -283,10 +354,10 @@ def suggest_cards_for_role(
 
     ranked_names = parse_card_names(rank_response or "")
     logger.info("LLM rank parsed names: role=%s names=%s", role, len(ranked_names))
-    name_to_card = {card.name: card for card in candidates}
+    name_to_card = {card.name: card for card in candidate_context.candidates}
     ranked_candidates = [name_to_card[name] for name in ranked_names if name in name_to_card]
     if not ranked_candidates:
-        ranked_candidates = candidates
+        ranked_candidates = candidate_context.candidates
     else:
         similarities = compute_similarity(session, commander_card, ranked_candidates)
         rank_weight = max(len(ranked_names), 1)
@@ -318,4 +389,51 @@ def suggest_cards_for_role(
             LLMRun.deck_id == deck_id, LLMRun.role == f"{role}:rank"
         ).update({"success": True})
 
+    return selected, source_attributions
+
+
+def suggest_cards_for_role(
+    session: Session,
+    deck_id: int,
+    commander: Commander,
+    deck_cards: Iterable[Card],
+    role: str,
+    count: int,
+    exclude_ids: set[int],
+    context_config: AgentContextConfig | None = None,
+) -> list[Card]:
+    """Suggest cards via LLM search + ranking, then validate against database and role."""
+    selected, _ = _suggest_cards_for_role(
+        session=session,
+        deck_id=deck_id,
+        commander=commander,
+        deck_cards=deck_cards,
+        role=role,
+        count=count,
+        exclude_ids=exclude_ids,
+        context_config=context_config,
+    )
     return selected
+
+
+def suggest_cards_with_attribution(
+    session: Session,
+    deck_id: int,
+    commander: Commander,
+    deck_cards: Iterable[Card],
+    role: str,
+    count: int,
+    exclude_ids: set[int],
+    context_config: AgentContextConfig | None = None,
+) -> tuple[list[Card], list[SourceAttribution]]:
+    """Suggest cards and return attribution details for the selection."""
+    return _suggest_cards_for_role(
+        session=session,
+        deck_id=deck_id,
+        commander=commander,
+        deck_cards=deck_cards,
+        role=role,
+        count=count,
+        exclude_ids=exclude_ids,
+        context_config=context_config,
+    )

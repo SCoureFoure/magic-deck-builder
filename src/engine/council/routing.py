@@ -55,7 +55,7 @@ def _agent_node(agent_id: str, agent_type: str):
                 state["role"],
                 state["commander_name"],
                 state["commander_text"],
-                state["XXdeck_cardsXX"],
+                state["deck_cards"],
                 state["candidates"],
             )
             if not ranked:

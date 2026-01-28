@@ -11,6 +11,7 @@ from src.config import settings
 from src.database.engine import get_db, init_db
 from src.engine.commander import find_commanders, is_commander_eligible, populate_commanders
 from src.engine.deck_builder import generate_deck
+from src.engine.evaluation import load_golden_tasks, run_golden_tasks, write_results
 from src.engine.validator import validate_deck
 from src.ingestion.bulk_ingest import (
     commander_legal_filter,
@@ -22,6 +23,7 @@ from src.ingestion.scryfall_client import ScryfallClient
 ingest_app = typer.Typer(help="Data ingestion commands")
 search_app = typer.Typer(help="Search commands")
 generate_app = typer.Typer(help="Deck generation commands")
+eval_app = typer.Typer(help="Evaluation commands")
 console = Console()
 
 
@@ -474,3 +476,56 @@ def generate_deck_cli(
         import traceback
         traceback.print_exc()
         raise typer.Exit(1)
+
+
+# Evaluation commands
+
+
+@eval_app.command("golden")
+def eval_golden(
+    tasks_path: Path = typer.Option(
+        Path("data/test/golden_tasks.json"),
+        "--tasks",
+        help="Path to golden tasks JSON",
+    ),
+    output: Path = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Optional path to write JSON results",
+    ),
+):
+    """Run golden task evaluation against the current database."""
+    if not tasks_path.exists():
+        console.print(f"[red]Error:[/red] Tasks file not found: {tasks_path}")
+        raise typer.Exit(1)
+
+    tasks = load_golden_tasks(tasks_path)
+    if not tasks:
+        console.print(f"[red]Error:[/red] No tasks found in {tasks_path}")
+        raise typer.Exit(1)
+
+    console.print("[bold cyan]Golden Evaluation[/bold cyan]")
+    console.print(f"Tasks: [yellow]{len(tasks)}[/yellow]")
+    console.print()
+
+    with get_db() as db:
+        results = run_golden_tasks(db, tasks)
+
+    successes = [result for result in results if result.success]
+    failures = [result for result in results if not result.success]
+
+    console.print(
+        f"[green]✓[/green] Success: [bold]{len(successes)}[/bold] "
+        f"[red]✗[/red] Failures: [bold]{len(failures)}[/bold]"
+    )
+
+    if failures:
+        console.print("\n[bold yellow]Failures[/bold yellow]")
+        for result in failures:
+            reason = result.error or "validation failure"
+            console.print(f"  • {result.task.commander_name}: {reason}")
+
+    if output:
+        write_results(output, results)
+        console.print(f"\n[green]✓[/green] Wrote results to [yellow]{output}[/yellow]")

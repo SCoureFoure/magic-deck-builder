@@ -1,6 +1,9 @@
 """LangGraph council orchestration for multi-agent card selection."""
 from __future__ import annotations
 
+import json
+import logging
+from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
@@ -8,9 +11,12 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Card, Commander
 from src.engine.archetypes import compute_identity_from_deck
+from src.engine.context import SourceAttribution
 from src.engine.roles import classify_card_role
 from src.engine.council.config import load_council_config
 from src.engine.council.routing import CouncilRouter
+
+logger = logging.getLogger(__name__)
 
 
 def _build_candidate_pool(
@@ -98,3 +104,74 @@ def select_cards_with_council(
     ranked_cards = [candidate_map[name] for name in ranked_names if name in candidate_map]
 
     return ranked_cards[:count]
+
+
+def select_cards_with_council_with_attribution(
+    session: Session,
+    commander: Commander,
+    deck_cards: list[Card],
+    role: str,
+    count: int,
+    exclude_ids: Optional[set[int]] = None,
+    config_path: Optional[str] = None,
+    overrides: Optional[dict[str, object]] = None,
+) -> tuple[list[Card], list[SourceAttribution]]:
+    exclude_ids = exclude_ids or set()
+    config = load_council_config(
+        config_path=(None if config_path is None else Path(config_path)),
+        overrides=overrides,
+    )
+
+    pool_size = max(count * 6, config.voting.top_k)
+    candidates = _build_candidate_pool(
+        session,
+        role,
+        commander.color_identity or [],
+        exclude_ids,
+        pool_size,
+    )
+
+    if not candidates:
+        return [], []
+
+    max_attribution_cards = min(pool_size, 100)
+    source_attribution = SourceAttribution(
+        source_type="candidate_pool",
+        details={
+            "role": role,
+            "color_identity": commander.color_identity or [],
+            "excluded": len(exclude_ids),
+            "limit": pool_size,
+            "total_candidates": len(candidates),
+        },
+        card_ids=[card.id for card in candidates[:max_attribution_cards]],
+        card_names=[card.name for card in candidates[:max_attribution_cards]],
+    )
+    logger.info(
+        "Council candidate sources: role=%s sources=%s",
+        role,
+        json.dumps([asdict(source_attribution)]),
+    )
+
+    identity = compute_identity_from_deck(commander.card, deck_cards)
+
+    graph = build_council_graph(config)
+    result = graph.invoke(
+        {
+            "role": role,
+            "commander_name": commander.card.name,
+            "commander_text": commander.card.oracle_text or "",
+            "deck_cards": deck_cards,
+            "candidates": candidates,
+            "identity": identity,
+            "agent_rankings": {},
+            "final_ranking": [],
+            "config": config,
+        }
+    )
+
+    ranked_names = result.get("final_ranking", [])
+    candidate_map = {card.name: card for card in candidates}
+    ranked_cards = [candidate_map[name] for name in ranked_names if name in candidate_map]
+
+    return ranked_cards[:count], [source_attribution]

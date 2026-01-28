@@ -1,0 +1,14 @@
+[
+  {
+    "commander_name": "Atraxa, Praetors' Voice",
+    "use_llm_agent": false,
+    "use_council": false,
+    "expected_total_cards": 100
+  },
+  {
+    "commander_name": "Urza, Lord High Artificer",
+    "use_llm_agent": false,
+    "use_council": false,
+    "expected_total_cards": 100
+  }
+]

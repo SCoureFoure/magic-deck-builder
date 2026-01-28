@@ -1,19 +1,31 @@
 """Deck generation engine for Commander decks."""
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from src.database.models import Card, Commander, Deck, DeckCard, Role
 from src.engine.archetypes import extract_identity
+from src.engine.context import SourceAttribution
 from src.engine.council import select_cards_with_council
-from src.engine.llm_agent import suggest_cards_for_role
+from src.engine.council.graph import select_cards_with_council_with_attribution
+from src.engine.llm_agent import suggest_cards_for_role, suggest_cards_with_attribution
 from src.engine.lands import calculate_land_distribution, needs_command_tower
 from src.engine.selector import select_basic_lands, select_cards_for_role, select_command_tower
 
 
-def generate_deck(
-    session: Session, commander: Commander, constraints: dict | None = None
-) -> Deck:
+@dataclass(frozen=True)
+class DeckBuildOutput:
+    deck: Deck
+    sources_by_role: dict[str, list[SourceAttribution]] = field(default_factory=dict)
+
+
+def _generate_deck_internal(
+    session: Session,
+    commander: Commander,
+    constraints: dict | None = None,
+    collect_attribution: bool = False,
+) -> DeckBuildOutput:
     """Generate a legal 100-card Commander deck.
 
     Uses standard template: 37 lands / 10 ramp / 10 draw / 10 removal /
@@ -40,6 +52,7 @@ def generate_deck(
 
     # Track selected card IDs to avoid duplicates
     selected_ids: set[int] = set()
+    sources_by_role: dict[str, list[SourceAttribution]] = {}
 
     # Step 1: Add commander (counts as 1 of the 100 cards)
     commander_card = commander.card
@@ -117,27 +130,51 @@ def generate_deck(
 
     for role_name, target_count in role_targets:
         cards: list[Card] = []
+        attributions: list[SourceAttribution] = []
         if use_council:
-            cards = select_cards_with_council(
-                session=session,
-                commander=commander,
-                deck_cards=current_cards,
-                role=role_name,
-                count=target_count,
-                exclude_ids=selected_ids,
-                config_path=council_config_path,
-                overrides=council_overrides,
-            )
+            if collect_attribution:
+                cards, attributions = select_cards_with_council_with_attribution(
+                    session=session,
+                    commander=commander,
+                    deck_cards=current_cards,
+                    role=role_name,
+                    count=target_count,
+                    exclude_ids=selected_ids,
+                    config_path=council_config_path,
+                    overrides=council_overrides,
+                )
+            else:
+                cards = select_cards_with_council(
+                    session=session,
+                    commander=commander,
+                    deck_cards=current_cards,
+                    role=role_name,
+                    count=target_count,
+                    exclude_ids=selected_ids,
+                    config_path=council_config_path,
+                    overrides=council_overrides,
+                )
         elif use_llm_agent:
-            cards = suggest_cards_for_role(
-                session=session,
-                deck_id=deck.id,
-                commander=commander,
-                deck_cards=current_cards,
-                role=role_name,
-                count=target_count,
-                exclude_ids=selected_ids,
-            )
+            if collect_attribution:
+                cards, attributions = suggest_cards_with_attribution(
+                    session=session,
+                    deck_id=deck.id,
+                    commander=commander,
+                    deck_cards=current_cards,
+                    role=role_name,
+                    count=target_count,
+                    exclude_ids=selected_ids,
+                )
+            else:
+                cards = suggest_cards_for_role(
+                    session=session,
+                    deck_id=deck.id,
+                    commander=commander,
+                    deck_cards=current_cards,
+                    role=role_name,
+                    count=target_count,
+                    exclude_ids=selected_ids,
+                )
 
         if len(cards) < target_count:
             remaining = target_count - len(cards)
@@ -150,6 +187,17 @@ def generate_deck(
                 selected_ids,
             )
             cards.extend(fallback)
+            if collect_attribution:
+                attributions.append(
+                    SourceAttribution(
+                        source_type="fallback_selection",
+                        details={"role": role_name, "count": len(fallback)},
+                        card_ids=[card.id for card in fallback],
+                        card_names=[card.name for card in fallback],
+                    )
+                )
+        if collect_attribution and attributions:
+            sources_by_role.setdefault(role_name, []).extend(attributions)
         cards_by_role[role_name] = cards
         for card in cards:
             selected_ids.add(card.id)
@@ -162,27 +210,51 @@ def generate_deck(
     # Commander counts as 1 synergy card, so we need 24 more + shortfall
     synergy_target = 24 + shortfall
     synergy_cards: list[Card] = []
+    synergy_attributions: list[SourceAttribution] = []
     if use_council:
-        synergy_cards = select_cards_with_council(
-            session=session,
-            commander=commander,
-            deck_cards=current_cards,
-            role="synergy",
-            count=synergy_target,
-            exclude_ids=selected_ids,
-            config_path=council_config_path,
-            overrides=council_overrides,
-        )
+        if collect_attribution:
+            synergy_cards, synergy_attributions = select_cards_with_council_with_attribution(
+                session=session,
+                commander=commander,
+                deck_cards=current_cards,
+                role="synergy",
+                count=synergy_target,
+                exclude_ids=selected_ids,
+                config_path=council_config_path,
+                overrides=council_overrides,
+            )
+        else:
+            synergy_cards = select_cards_with_council(
+                session=session,
+                commander=commander,
+                deck_cards=current_cards,
+                role="synergy",
+                count=synergy_target,
+                exclude_ids=selected_ids,
+                config_path=council_config_path,
+                overrides=council_overrides,
+            )
     elif use_llm_agent:
-        synergy_cards = suggest_cards_for_role(
-            session=session,
-            deck_id=deck.id,
-            commander=commander,
-            deck_cards=current_cards,
-            role="synergy",
-            count=synergy_target,
-            exclude_ids=selected_ids,
-        )
+        if collect_attribution:
+            synergy_cards, synergy_attributions = suggest_cards_with_attribution(
+                session=session,
+                deck_id=deck.id,
+                commander=commander,
+                deck_cards=current_cards,
+                role="synergy",
+                count=synergy_target,
+                exclude_ids=selected_ids,
+            )
+        else:
+            synergy_cards = suggest_cards_for_role(
+                session=session,
+                deck_id=deck.id,
+                commander=commander,
+                deck_cards=current_cards,
+                role="synergy",
+                count=synergy_target,
+                exclude_ids=selected_ids,
+            )
 
     if len(synergy_cards) < synergy_target:
         remaining = synergy_target - len(synergy_cards)
@@ -195,6 +267,17 @@ def generate_deck(
             selected_ids,
         )
         synergy_cards.extend(fallback)
+        if collect_attribution:
+            synergy_attributions.append(
+                SourceAttribution(
+                    source_type="fallback_selection",
+                    details={"role": "synergy", "count": len(fallback)},
+                    card_ids=[card.id for card in fallback],
+                    card_names=[card.name for card in fallback],
+                )
+            )
+    if collect_attribution and synergy_attributions:
+        sources_by_role.setdefault("synergy", []).extend(synergy_attributions)
     cards_by_role["synergy"] = synergy_cards
 
     # Step 5: Add non-land cards to deck with correct role assignments
@@ -212,4 +295,29 @@ def generate_deck(
 
     session.commit()
     session.refresh(deck)
-    return deck
+    return DeckBuildOutput(deck=deck, sources_by_role=sources_by_role)
+
+
+def generate_deck(
+    session: Session, commander: Commander, constraints: dict | None = None
+) -> Deck:
+    """Generate a legal 100-card Commander deck."""
+    result = _generate_deck_internal(
+        session=session,
+        commander=commander,
+        constraints=constraints,
+        collect_attribution=False,
+    )
+    return result.deck
+
+
+def generate_deck_with_attribution(
+    session: Session, commander: Commander, constraints: dict | None = None
+) -> DeckBuildOutput:
+    """Generate a deck and return source attribution details."""
+    return _generate_deck_internal(
+        session=session,
+        commander=commander,
+        constraints=constraints,
+        collect_attribution=True,
+    )

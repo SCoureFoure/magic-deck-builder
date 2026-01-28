@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from src.config import settings
+from src.engine.context import AgentContextConfig, ContextBudget, ContextFilters
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class AgentConfig:
     model: Optional[str] = None
     temperature: float = 0.3
     preferences: AgentPreferences = field(default_factory=AgentPreferences)
+    context: AgentContextConfig = field(default_factory=AgentContextConfig)
 
 
 @dataclass(frozen=True)
@@ -78,8 +80,41 @@ def _parse_preferences(data: dict[str, Any]) -> AgentPreferences:
     )
 
 
+def _parse_context_budget(data: dict[str, Any]) -> ContextBudget:
+    if not isinstance(data, dict):
+        data = {}
+    return ContextBudget(
+        max_deck_cards=int(data.get("max_deck_cards", 40)),
+        max_candidates=int(data.get("max_candidates", 60)),
+        max_commander_text_chars=int(data.get("max_commander_text_chars", 1200)),
+        max_candidate_oracle_chars=int(data.get("max_candidate_oracle_chars", 600)),
+    )
+
+
+def _parse_context_filters(data: dict[str, Any]) -> ContextFilters:
+    if not isinstance(data, dict):
+        data = {}
+    return ContextFilters(
+        include_commander_text=bool(data.get("include_commander_text", True)),
+        include_deck_cards=bool(data.get("include_deck_cards", True)),
+        include_candidate_oracle=bool(data.get("include_candidate_oracle", True)),
+        include_candidate_type_line=bool(data.get("include_candidate_type_line", True)),
+        include_candidate_cmc=bool(data.get("include_candidate_cmc", True)),
+        include_candidate_price=bool(data.get("include_candidate_price", True)),
+    )
+
+
+def _parse_context(data: dict[str, Any]) -> AgentContextConfig:
+    if not isinstance(data, dict):
+        data = {}
+    budget = _parse_context_budget(data.get("budget", {}))
+    filters = _parse_context_filters(data.get("filters", {}))
+    return AgentContextConfig(budget=budget, filters=filters)
+
+
 def _parse_agent(data: dict[str, Any]) -> AgentConfig:
     preferences = _parse_preferences(data.get("preferences", {}))
+    context = _parse_context(data.get("context", {}))
     return AgentConfig(
         agent_id=str(data.get("id") or data.get("agent_id") or "agent"),
         agent_type=str(data.get("type") or data.get("agent_type") or "heuristic"),
@@ -88,6 +123,7 @@ def _parse_agent(data: dict[str, Any]) -> AgentConfig:
         model=(data.get("model") or None),
         temperature=float(data.get("temperature", 0.3)),
         preferences=preferences,
+        context=context,
     )
 
 

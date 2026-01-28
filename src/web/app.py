@@ -25,7 +25,7 @@ from src.engine.commander import create_commander_entry, find_commanders, is_com
 from src.engine.archetypes import compute_identity_from_deck, extract_identity, score_card_for_identity
 from src.engine.council.config import load_council_config
 from src.engine.council.training import council_training_opinions
-from src.engine.deck_builder import generate_deck
+from src.engine.deck_builder import generate_deck_with_attribution
 from src.engine.metrics import compute_coherence_metrics
 from src.engine.validator import validate_deck
 from src.config import settings
@@ -189,6 +189,15 @@ class DeckCardResult(BaseModel):
     deck_score: float
 
 
+class SourceAttributionResult(BaseModel):
+    """Source attribution payload for selections."""
+
+    source_type: str
+    details: dict[str, Any]
+    card_ids: list[int]
+    card_names: list[str]
+
+
 class DeckGenerationResponse(BaseModel):
     """API response for deck generation."""
 
@@ -198,6 +207,7 @@ class DeckGenerationResponse(BaseModel):
     validation_errors: list[str]
     cards_by_role: dict[str, list[DeckCardResult]]
     metrics: dict[str, Any]
+    sources_by_role: dict[str, list[SourceAttributionResult]]
 
 
 app = FastAPI(title="Magic Deck Builder API", version="0.1.0")
@@ -301,7 +311,7 @@ def generate_deck_endpoint(request: DeckGenerationRequest) -> DeckGenerationResp
         seed_roles(db)
 
         # Generate deck
-        deck = generate_deck(
+        build_output = generate_deck_with_attribution(
             db,
             commander,
             constraints={
@@ -311,6 +321,7 @@ def generate_deck_endpoint(request: DeckGenerationRequest) -> DeckGenerationResp
                 "council_overrides": request.council_overrides,
             },
         )
+        deck = build_output.deck
 
         # Validate deck
         is_valid, errors = validate_deck(deck)
@@ -353,6 +364,18 @@ def generate_deck_endpoint(request: DeckGenerationRequest) -> DeckGenerationResp
 
         metrics = compute_coherence_metrics(deck, deck_identity)
 
+        sources_payload: dict[str, list[SourceAttributionResult]] = {}
+        for role_name, sources in build_output.sources_by_role.items():
+            sources_payload[role_name] = [
+                SourceAttributionResult(
+                    source_type=source.source_type,
+                    details=source.details,
+                    card_ids=source.card_ids,
+                    card_names=source.card_names,
+                )
+                for source in sources
+            ]
+
         return DeckGenerationResponse(
             commander_name=commander_card.name,
             total_cards=total_cards,
@@ -360,6 +383,7 @@ def generate_deck_endpoint(request: DeckGenerationRequest) -> DeckGenerationResp
             validation_errors=errors,
             cards_by_role=dict(cards_by_role),
             metrics=metrics,
+            sources_by_role=sources_payload,
         )
 
 

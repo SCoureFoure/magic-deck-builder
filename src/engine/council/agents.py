@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+import time
 from typing import Iterable, Optional
 
 from langchain_openai import ChatOpenAI
 
 from src.database.models import Card
 from src.engine.archetypes import score_card_for_identity
+from src.engine.context import CandidateContext, DeckContext, build_candidate_context, build_deck_context
+from src.engine.observability import estimate_tokens, log_event
 from src.engine.roles import classify_card_role, get_role_description
 from src.engine.council.config import AgentConfig, AgentPreferences
 from src.engine.validator import parse_agent_task
@@ -65,23 +68,11 @@ def heuristic_rank_candidates(
     return [name for _, name in scored]
 
 
-def _candidate_snapshot(card: Card) -> dict[str, str | float | None]:
-    return {
-        "name": card.name,
-        "type": card.type_line,
-        "cmc": card.cmc,
-        "price_usd": card.price_usd,
-        "oracle": card.oracle_text or "",
-    }
-
-
 def _build_llm_prompt(
     agent_id: str,
     role: str,
-    commander_name: str,
-    commander_text: str,
-    deck_cards: list[Card],
-    candidates: list[Card],
+    deck_context: DeckContext,
+    candidate_context: CandidateContext,
     preferences: AgentPreferences,
 ) -> tuple[str, str]:
     system_prompt = (
@@ -90,15 +81,15 @@ def _build_llm_prompt(
         "Return ONLY a JSON array of card names in ranked order, best to worst."
     )
 
-    deck_list = ", ".join(card.name for card in deck_cards[:40])
-    candidate_payload = [_candidate_snapshot(card) for card in candidates]
+    deck_list = ", ".join(deck_context.deck_cards)
+    candidate_payload = candidate_context.payload
 
     user_prompt = (
         f"Agent ID: {agent_id}\n"
         f"Role needed: {role}\n"
         f"Role definition: {get_role_description(role)}\n"
-        f"Commander: {commander_name}\n"
-        f"Commander text: {commander_text}\n"
+        f"Commander: {deck_context.commander_name}\n"
+        f"Commander text: {deck_context.commander_text}\n"
         f"Deck so far: {deck_list}\n"
         f"Preferences: {json.dumps(asdict(preferences))}\n"
         "Candidates (JSON list):\n"
@@ -148,6 +139,9 @@ def llm_rank_candidates(
     if not task:
         return []
 
+    deck_context = build_deck_context(task, agent.context)
+    candidate_context = build_candidate_context(candidates, agent.context)
+
     model_name = agent.model or settings.openai_model
     llm = ChatOpenAI(
         model=model_name,
@@ -158,16 +152,29 @@ def llm_rank_candidates(
     system_prompt, user_prompt = _build_llm_prompt(
         agent.agent_id,
         role,
-        commander_name,
-        commander_text,
-        deck_cards,
-        candidates,
+        deck_context,
+        candidate_context,
         agent.preferences,
     )
 
+    started = time.monotonic()
     response = llm.invoke([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ])
+    content = getattr(response, "content", "")
+    duration_ms = int((time.monotonic() - started) * 1000)
+    log_event(
+        "council_llm_call",
+        {
+            "agent_id": agent.agent_id,
+            "model": model_name,
+            "role": role,
+            "success": bool(content),
+            "duration_ms": duration_ms,
+            "prompt_tokens_est": estimate_tokens(system_prompt + user_prompt),
+            "response_tokens_est": estimate_tokens(content),
+        },
+    )
 
-    return _parse_ranked_names(getattr(response, "content", ""))
+    return _parse_ranked_names(content)
