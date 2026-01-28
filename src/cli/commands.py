@@ -365,6 +365,26 @@ def generate_deck_cli(
     council_config: Path = typer.Option(
         None, "--council-config", help="Path to council config YAML"
     ),
+    routing_strategy: str | None = typer.Option(
+        None,
+        "--routing-strategy",
+        help="Council routing strategy (parallel, sequential, debate)",
+    ),
+    agent_ids: str | None = typer.Option(
+        None,
+        "--agent-ids",
+        help="Comma-separated council agent IDs",
+    ),
+    debate_adjudicator_id: str | None = typer.Option(
+        None,
+        "--debate-adjudicator-id",
+        help="Agent ID to adjudicate debate strategy",
+    ),
+    trace_id: str | None = typer.Option(
+        None,
+        "--trace-id",
+        help="Optional trace ID for observability",
+    ),
 ):
     """Generate a 100-card Commander deck.
 
@@ -408,6 +428,19 @@ def generate_deck_cli(
 
             # Generate deck
             with console.status("Generating deck..."):
+                council_overrides = {}
+                routing_overrides = {}
+                if routing_strategy:
+                    routing_overrides["strategy"] = routing_strategy
+                if agent_ids:
+                    routing_overrides["agent_ids"] = [
+                        item.strip() for item in agent_ids.split(",") if item.strip()
+                    ]
+                if debate_adjudicator_id:
+                    routing_overrides["debate_adjudicator_id"] = debate_adjudicator_id
+                if routing_overrides:
+                    council_overrides["routing"] = routing_overrides
+
                 deck = generate_deck(
                     db,
                     commander,
@@ -416,6 +449,8 @@ def generate_deck_cli(
                         "council_config_path": str(council_config)
                         if council_config
                         else None,
+                        "council_overrides": council_overrides or None,
+                        "trace_id": trace_id,
                     },
                 )
 

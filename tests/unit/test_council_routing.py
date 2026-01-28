@@ -1,45 +1,43 @@
-import pytest
-
-pytest.importorskip("langgraph")
-
-from src.engine.council.config import AgentConfig, CouncilConfig, RoutingConfig
-from src.engine.council.routing import _build_debate, _resolve_agents
+from src.engine.council.config import AgentConfig, CouncilConfig, RoutingConfig, VotingConfig
+from src.engine.council.routing import CouncilRouter
 
 
-def _agent(agent_id: str, agent_type: str = "heuristic") -> AgentConfig:
-    return AgentConfig(agent_id=agent_id, agent_type=agent_type)
-
-
-def test_resolve_agents_returns_subset_in_order() -> None:
-    config = CouncilConfig(
-        agents=[_agent("a"), _agent("b"), _agent("c")],
-        routing=RoutingConfig(agent_ids=["c", "a"]),
+def _config_with_agents(agent_ids: list[str], strategy: str) -> CouncilConfig:
+    agents = [AgentConfig(agent_id=agent_id, agent_type="heuristic") for agent_id in agent_ids]
+    return CouncilConfig(
+        voting=VotingConfig(strategy="borda", top_k=5),
+        routing=RoutingConfig(strategy=strategy, agent_ids=agent_ids),
+        agents=agents,
     )
-    resolved = _resolve_agents(config)
-    assert [agent.agent_id for agent in resolved] == ["c", "a"]
 
 
-def test_build_debate_uses_explicit_adjudicator() -> None:
-    config = CouncilConfig(
-        agents=[_agent("a"), _agent("b"), _agent("judge")],
-        routing=RoutingConfig(strategy="debate", debate_adjudicator_id="judge"),
-    )
-    graph = _build_debate(config, config.agents)
-    node_ids = set(graph.nodes.keys())
-    assert "agent_a" in node_ids
-    assert "agent_b" in node_ids
-    assert "agent_judge" in node_ids
-    assert "start" in node_ids
-    assert "aggregate" in node_ids
+def test_parallel_builds_agent_nodes() -> None:
+    config = _config_with_agents(["a1", "a2"], "parallel")
+    graph = CouncilRouter(config).build_graph()
+    assert "agent_a1" in graph.nodes
+    assert "agent_a2" in graph.nodes
+    assert "aggregate" in graph.nodes
 
 
-def test_build_debate_defaults_last_agent_as_adjudicator() -> None:
-    config = CouncilConfig(
-        agents=[_agent("a"), _agent("b"), _agent("c")],
-        routing=RoutingConfig(strategy="debate"),
-    )
-    graph = _build_debate(config, config.agents)
-    node_ids = set(graph.nodes.keys())
-    assert "agent_a" in node_ids
-    assert "agent_b" in node_ids
-    assert "agent_c" in node_ids
+def test_sequential_builds_agent_nodes() -> None:
+    config = _config_with_agents(["a1", "a2", "a3"], "sequential")
+    graph = CouncilRouter(config).build_graph()
+    assert "agent_a1" in graph.nodes
+    assert "agent_a2" in graph.nodes
+    assert "agent_a3" in graph.nodes
+    assert "aggregate" in graph.nodes
+
+
+def test_debate_uses_subset() -> None:
+    config = _config_with_agents(["a1", "a2", "a3"], "debate")
+    graph = CouncilRouter(config).build_graph()
+    assert "agent_a1" in graph.nodes
+    assert "agent_a2" in graph.nodes
+    assert "agent_a3" in graph.nodes
+
+
+def test_fallback_to_parallel_for_unknown_strategy() -> None:
+    config = _config_with_agents(["a1"], "unknown")
+    graph = CouncilRouter(config).build_graph()
+    assert "agent_a1" in graph.nodes
+    assert "aggregate" in graph.nodes

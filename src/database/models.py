@@ -207,6 +207,49 @@ class LLMRun(Base):
         return f"<LLMRun(deck_id={self.deck_id}, role={self.role}, success={self.success})>"
 
 
+class CouncilAgentOpinion(Base):
+    """Council agent-level scores/rankings with optional rationale."""
+
+    __tablename__ = "council_agent_opinions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deck_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("decks.id"), nullable=True, index=True
+    )
+    training_session_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("training_sessions.id"), nullable=True, index=True
+    )
+    commander_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("commanders.id"), nullable=False, index=True
+    )
+    card_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("cards.id"), nullable=True, index=True
+    )
+    role: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    agent_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    agent_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    metrics: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ranking: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    trace_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+
+    deck: Mapped[Optional["Deck"]] = relationship("Deck")
+    commander: Mapped["Commander"] = relationship("Commander")
+    card: Mapped[Optional["Card"]] = relationship("Card")
+    training_session: Mapped[Optional["TrainingSession"]] = relationship("TrainingSession")
+
+    def __repr__(self) -> str:
+        return (
+            f"<CouncilAgentOpinion(agent_id={self.agent_id}, role={self.role}, "
+            f"score={self.score})>"
+        )
+
+
 class CommanderCardSynergy(Base):
     """Commander-card synergy labels (0/1)."""
 

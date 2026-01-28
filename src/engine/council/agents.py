@@ -124,6 +124,7 @@ def llm_rank_candidates(
     commander_text: str,
     deck_cards: list[Card],
     candidates: list[Card],
+    trace_id: str | None = None,
 ) -> list[str]:
     if not settings.openai_api_key:
         return []
@@ -175,6 +176,7 @@ def llm_rank_candidates(
             "prompt_tokens_est": estimate_tokens(system_prompt + user_prompt),
             "response_tokens_est": estimate_tokens(content),
         },
+        trace_id=trace_id,
     )
 
     return _parse_ranked_names(content)

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
     council_config_path: Path = Path("./council.yaml")
+    openai_max_retries: int = 3
+    openai_backoff_base_s: float = 0.5
+    openai_backoff_max_s: float = 8.0
 
     # CORS (comma-separated origins)
     cors_origins: str = "http://localhost:5173"

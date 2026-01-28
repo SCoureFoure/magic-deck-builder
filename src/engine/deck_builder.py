@@ -126,6 +126,7 @@ def _generate_deck_internal(
     use_council = bool((constraints or {}).get("use_council"))
     council_overrides = (constraints or {}).get("council_overrides")
     council_config_path = (constraints or {}).get("council_config_path")
+    trace_id = (constraints or {}).get("trace_id")
     current_cards: list[Card] = [commander_card]
 
     for role_name, target_count in role_targets:
@@ -142,6 +143,8 @@ def _generate_deck_internal(
                     exclude_ids=selected_ids,
                     config_path=council_config_path,
                     overrides=council_overrides,
+                    trace_id=trace_id,
+                    deck_id=deck.id,
                 )
             else:
                 cards = select_cards_with_council(
@@ -153,6 +156,8 @@ def _generate_deck_internal(
                     exclude_ids=selected_ids,
                     config_path=council_config_path,
                     overrides=council_overrides,
+                    trace_id=trace_id,
+                    deck_id=deck.id,
                 )
         elif use_llm_agent:
             if collect_attribution:
@@ -164,6 +169,7 @@ def _generate_deck_internal(
                     role=role_name,
                     count=target_count,
                     exclude_ids=selected_ids,
+                    trace_id=trace_id,
                 )
             else:
                 cards = suggest_cards_for_role(
@@ -174,6 +180,7 @@ def _generate_deck_internal(
                     role=role_name,
                     count=target_count,
                     exclude_ids=selected_ids,
+                    trace_id=trace_id,
                 )
 
         if len(cards) < target_count:
@@ -222,6 +229,8 @@ def _generate_deck_internal(
                 exclude_ids=selected_ids,
                 config_path=council_config_path,
                 overrides=council_overrides,
+                trace_id=trace_id,
+                deck_id=deck.id,
             )
         else:
             synergy_cards = select_cards_with_council(
@@ -233,6 +242,8 @@ def _generate_deck_internal(
                 exclude_ids=selected_ids,
                 config_path=council_config_path,
                 overrides=council_overrides,
+                trace_id=trace_id,
+                deck_id=deck.id,
             )
     elif use_llm_agent:
         if collect_attribution:
@@ -244,6 +255,7 @@ def _generate_deck_internal(
                 role="synergy",
                 count=synergy_target,
                 exclude_ids=selected_ids,
+                trace_id=trace_id,
             )
         else:
             synergy_cards = suggest_cards_for_role(
@@ -254,6 +266,7 @@ def _generate_deck_internal(
                 role="synergy",
                 count=synergy_target,
                 exclude_ids=selected_ids,
+                trace_id=trace_id,
             )
 
     if len(synergy_cards) < synergy_target:

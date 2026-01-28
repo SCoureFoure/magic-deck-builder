@@ -7,9 +7,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from src.database.models import Card, Commander
+from src.database.models import Card, Commander, CouncilAgentOpinion
 from src.engine.archetypes import compute_identity_from_deck
 from src.engine.context import SourceAttribution
 from src.engine.roles import classify_card_role
@@ -17,6 +18,43 @@ from src.engine.council.config import load_council_config
 from src.engine.council.routing import CouncilRouter
 
 logger = logging.getLogger(__name__)
+
+def _record_agent_opinions(
+    session: Session,
+    deck_id: int | None,
+    commander_id: int,
+    role: str,
+    config,
+    agent_rankings: dict[str, list[str]],
+    trace_id: Optional[str],
+) -> None:
+    if not agent_rankings:
+        return
+    agent_map = {agent.agent_id: agent for agent in config.agents}
+    top_k = config.voting.top_k
+    rows: list[CouncilAgentOpinion] = []
+    for agent_id, ranking in agent_rankings.items():
+        agent = agent_map.get(agent_id)
+        if not agent:
+            continue
+        rows.append(
+            CouncilAgentOpinion(
+                deck_id=deck_id,
+                commander_id=commander_id,
+                role=role,
+                agent_id=agent.agent_id,
+                agent_type=agent.agent_type,
+                weight=agent.weight,
+                ranking=ranking[:top_k] if ranking else [],
+                trace_id=trace_id,
+            )
+        )
+    if rows:
+        try:
+            session.add_all(rows)
+            session.flush()
+        except SQLAlchemyError:
+            logger.warning("Failed to persist council agent opinions", exc_info=True)
 
 
 def _build_candidate_pool(
@@ -63,6 +101,8 @@ def select_cards_with_council(
     exclude_ids: Optional[set[int]] = None,
     config_path: Optional[str] = None,
     overrides: Optional[dict[str, object]] = None,
+    trace_id: Optional[str] = None,
+    deck_id: Optional[int] = None,
 ) -> list[Card]:
     exclude_ids = exclude_ids or set()
     config = load_council_config(
@@ -96,10 +136,20 @@ def select_cards_with_council(
             "agent_rankings": {},
             "final_ranking": [],
             "config": config,
+            "trace_id": trace_id,
         }
     )
 
     ranked_names = result.get("final_ranking", [])
+    _record_agent_opinions(
+        session=session,
+        deck_id=deck_id,
+        commander_id=commander.id,
+        role=role,
+        config=config,
+        agent_rankings=result.get("agent_rankings", {}),
+        trace_id=trace_id,
+    )
     candidate_map = {card.name: card for card in candidates}
     ranked_cards = [candidate_map[name] for name in ranked_names if name in candidate_map]
 
@@ -115,6 +165,8 @@ def select_cards_with_council_with_attribution(
     exclude_ids: Optional[set[int]] = None,
     config_path: Optional[str] = None,
     overrides: Optional[dict[str, object]] = None,
+    trace_id: Optional[str] = None,
+    deck_id: Optional[int] = None,
 ) -> tuple[list[Card], list[SourceAttribution]]:
     exclude_ids = exclude_ids or set()
     config = load_council_config(
@@ -167,10 +219,20 @@ def select_cards_with_council_with_attribution(
             "agent_rankings": {},
             "final_ranking": [],
             "config": config,
+            "trace_id": trace_id,
         }
     )
 
     ranked_names = result.get("final_ranking", [])
+    _record_agent_opinions(
+        session=session,
+        deck_id=deck_id,
+        commander_id=commander.id,
+        role=role,
+        config=config,
+        agent_rankings=result.get("agent_rankings", {}),
+        trace_id=trace_id,
+    )
     candidate_map = {card.name: card for card in candidates}
     ranked_cards = [candidate_map[name] for name in ranked_names if name in candidate_map]
 

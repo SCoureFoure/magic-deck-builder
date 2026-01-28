@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import time
 from dataclasses import asdict
 from typing import Iterable, Optional
@@ -121,7 +122,31 @@ def parse_search_queries(response_text: str) -> list[SearchQuery]:
     return queries
 
 
-def _call_openai(prompt: str, system_prompt: str, temperature: float) -> str | None:
+def _should_retry(response: httpx.Response | None, error: Exception | None) -> bool:
+    if response is not None:
+        if response.status_code in {429, 500, 502, 503, 504}:
+            return True
+    if isinstance(error, httpx.TimeoutException):
+        return True
+    if isinstance(error, httpx.NetworkError):
+        return True
+    return False
+
+
+def _backoff_sleep(attempt: int) -> None:
+    base = settings.openai_backoff_base_s
+    cap = settings.openai_backoff_max_s
+    delay = min(cap, base * (2 ** attempt))
+    jitter = random.uniform(0, delay * 0.1)
+    time.sleep(delay + jitter)
+
+
+def _call_openai(
+    prompt: str,
+    system_prompt: str,
+    temperature: float,
+    trace_id: str | None = None,
+) -> str | None:
     if not settings.openai_api_key:
         return None
 
@@ -140,15 +165,26 @@ def _call_openai(prompt: str, system_prompt: str, temperature: float) -> str | N
         "Content-Type": "application/json",
     }
 
-    try:
-        response = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=30,
-        )
-        response.raise_for_status()
-    except httpx.HTTPError:
+    response: httpx.Response | None = None
+    last_error: Exception | None = None
+    for attempt in range(settings.openai_max_retries + 1):
+        try:
+            response = httpx.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+            response.raise_for_status()
+            last_error = None
+            break
+        except httpx.HTTPError as exc:
+            last_error = exc
+            if not _should_retry(response, exc) or attempt >= settings.openai_max_retries:
+                break
+            _backoff_sleep(attempt)
+
+    if last_error is not None:
         duration_ms = int((time.monotonic() - started) * 1000)
         log_event(
             "llm_call",
@@ -157,7 +193,9 @@ def _call_openai(prompt: str, system_prompt: str, temperature: float) -> str | N
                 "success": False,
                 "duration_ms": duration_ms,
                 "prompt_tokens_est": estimate_tokens(system_prompt + prompt),
+                "retries": settings.openai_max_retries,
             },
+            trace_id=trace_id,
         )
         return None
 
@@ -172,7 +210,9 @@ def _call_openai(prompt: str, system_prompt: str, temperature: float) -> str | N
             "duration_ms": duration_ms,
             "prompt_tokens_est": estimate_tokens(system_prompt + prompt),
             "response_tokens_est": estimate_tokens(content),
+            "retries": settings.openai_max_retries,
         },
+        trace_id=trace_id,
     )
     return content
 
@@ -241,6 +281,7 @@ def _suggest_cards_for_role(
     count: int,
     exclude_ids: set[int],
     context_config: AgentContextConfig | None = None,
+    trace_id: str | None = None,
 ) -> tuple[list[Card], list[SourceAttribution]]:
     """Suggest cards via LLM search + ranking, then validate against database and role."""
     context_config = context_config or AgentContextConfig()
@@ -275,6 +316,7 @@ def _suggest_cards_for_role(
             "Return JSON only. Avoid commentary. Ensure queries align with the role and commander."
         ),
         temperature=0.6,
+        trace_id=trace_id,
     )
     _log_llm_run(
         session=session,
@@ -340,6 +382,7 @@ def _suggest_cards_for_role(
             "Return JSON only. Order from best fit to worst."
         ),
         temperature=0.2,
+        trace_id=trace_id,
     )
     _log_llm_run(
         session=session,
@@ -401,6 +444,7 @@ def suggest_cards_for_role(
     count: int,
     exclude_ids: set[int],
     context_config: AgentContextConfig | None = None,
+    trace_id: str | None = None,
 ) -> list[Card]:
     """Suggest cards via LLM search + ranking, then validate against database and role."""
     selected, _ = _suggest_cards_for_role(
@@ -412,6 +456,7 @@ def suggest_cards_for_role(
         count=count,
         exclude_ids=exclude_ids,
         context_config=context_config,
+        trace_id=trace_id,
     )
     return selected
 
@@ -425,6 +470,7 @@ def suggest_cards_with_attribution(
     count: int,
     exclude_ids: set[int],
     context_config: AgentContextConfig | None = None,
+    trace_id: str | None = None,
 ) -> tuple[list[Card], list[SourceAttribution]]:
     """Suggest cards and return attribution details for the selection."""
     return _suggest_cards_for_role(
@@ -436,4 +482,5 @@ def suggest_cards_with_attribution(
         count=count,
         exclude_ids=exclude_ids,
         context_config=context_config,
+        trace_id=trace_id,
     )

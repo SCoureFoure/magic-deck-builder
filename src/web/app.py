@@ -17,6 +17,7 @@ from src.database.models import (
     Commander,
     CommanderCardSynergy,
     CommanderCardVote,
+    CouncilAgentOpinion,
     TrainingSession,
     TrainingSessionCard,
 )
@@ -27,6 +28,7 @@ from src.engine.council.config import load_council_config
 from src.engine.council.training import council_training_opinions
 from src.engine.deck_builder import generate_deck_with_attribution
 from src.engine.metrics import compute_coherence_metrics
+from src.engine.observability import generate_trace_id
 from src.engine.validator import validate_deck
 from src.config import settings
 from src.ingestion.bulk_ingest import ingest_search_results
@@ -63,6 +65,10 @@ class DeckGenerationRequest(BaseModel):
     use_council: bool = False
     council_config_path: Optional[str] = None
     council_overrides: Optional[dict[str, Any]] = None
+    routing_strategy: Optional[str] = None
+    routing_agent_ids: Optional[list[str]] = None
+    debate_adjudicator_id: Optional[str] = None
+    trace_id: Optional[str] = None
 
 
 class TrainingCard(BaseModel):
@@ -147,6 +153,10 @@ class CouncilAnalysisRequest(BaseModel):
     council_config_path: Optional[str] = None
     council_overrides: Optional[dict[str, Any]] = None
     api_key: Optional[str] = None
+    routing_strategy: Optional[str] = None
+    routing_agent_ids: Optional[list[str]] = None
+    debate_adjudicator_id: Optional[str] = None
+    trace_id: Optional[str] = None
 
 
 class CouncilAnalysisResponse(BaseModel):
@@ -156,6 +166,7 @@ class CouncilAnalysisResponse(BaseModel):
     commander_name: str
     card_name: str
     opinions: list[CouncilOpinion]
+    trace_id: Optional[str]
 
 
 class SynergyCardResult(BaseModel):
@@ -208,10 +219,12 @@ class DeckGenerationResponse(BaseModel):
     cards_by_role: dict[str, list[DeckCardResult]]
     metrics: dict[str, Any]
     sources_by_role: dict[str, list[SourceAttributionResult]]
+    trace_id: Optional[str]
 
 
 app = FastAPI(title="Magic Deck Builder API", version="0.1.0")
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -311,6 +324,19 @@ def generate_deck_endpoint(request: DeckGenerationRequest) -> DeckGenerationResp
         seed_roles(db)
 
         # Generate deck
+        trace_id = request.trace_id or generate_trace_id()
+        overrides: dict[str, Any] = dict(request.council_overrides or {})
+        routing_overrides: dict[str, Any] = {}
+        if request.routing_strategy:
+            routing_overrides["strategy"] = request.routing_strategy
+        if request.routing_agent_ids:
+            routing_overrides["agent_ids"] = request.routing_agent_ids
+        if request.debate_adjudicator_id:
+            routing_overrides["debate_adjudicator_id"] = request.debate_adjudicator_id
+        if routing_overrides:
+            overrides["routing"] = routing_overrides
+
+        trace_id = request.trace_id or generate_trace_id()
         build_output = generate_deck_with_attribution(
             db,
             commander,
@@ -318,7 +344,8 @@ def generate_deck_endpoint(request: DeckGenerationRequest) -> DeckGenerationResp
                 "use_llm_agent": request.use_llm_agent,
                 "use_council": request.use_council,
                 "council_config_path": request.council_config_path,
-                "council_overrides": request.council_overrides,
+                "council_overrides": overrides or None,
+                "trace_id": trace_id,
             },
         )
         deck = build_output.deck
@@ -384,6 +411,7 @@ def generate_deck_endpoint(request: DeckGenerationRequest) -> DeckGenerationResp
             cards_by_role=dict(cards_by_role),
             metrics=metrics,
             sources_by_role=sources_payload,
+            trace_id=trace_id,
         )
 
 
@@ -424,19 +452,32 @@ def training_session_start() -> TrainingSessionResponse:
 def training_council_analyze(request: CouncilAnalysisRequest) -> CouncilAnalysisResponse:
     """Analyze a training card using the council agents."""
     with get_db() as db:
-        session = db.query(TrainingSession).filter(TrainingSession.id == request.session_id).first()
-        if not session:
+        training_session = (
+            db.query(TrainingSession).filter(TrainingSession.id == request.session_id).first()
+        )
+        if not training_session:
             raise HTTPException(status_code=404, detail="Training session not found")
 
         card = db.query(Card).filter(Card.id == request.card_id).first()
         if not card:
             raise HTTPException(status_code=404, detail="Card not found")
 
+        overrides: dict[str, Any] = dict(request.council_overrides or {})
+        routing_overrides: dict[str, Any] = {}
+        if request.routing_strategy:
+            routing_overrides["strategy"] = request.routing_strategy
+        if request.routing_agent_ids:
+            routing_overrides["agent_ids"] = request.routing_agent_ids
+        if request.debate_adjudicator_id:
+            routing_overrides["debate_adjudicator_id"] = request.debate_adjudicator_id
+        if routing_overrides:
+            overrides["routing"] = routing_overrides
+
         config = load_council_config(
             config_path=None
             if request.council_config_path is None
             else Path(request.council_config_path),
-            overrides=request.council_overrides,
+            overrides=overrides or None,
         )
         if (
             any(agent.agent_type == "llm" for agent in config.agents)
@@ -448,18 +489,47 @@ def training_council_analyze(request: CouncilAnalysisRequest) -> CouncilAnalysis
             )
 
         opinions = council_training_opinions(
-            session.commander,
+            training_session.commander,
             card,
             config_path=request.council_config_path,
-            overrides=request.council_overrides,
+            overrides=overrides or None,
             api_key_override=request.api_key,
+            trace_id=trace_id,
         )
+
+        opinion_rows = []
+        for opinion in opinions:
+            opinion_rows.append(
+                CouncilAgentOpinion(
+                    training_session_id=training_session.id,
+                    commander_id=training_session.commander.id,
+                    card_id=card.id,
+                    role="training",
+                    agent_id=opinion.get("agent_id", ""),
+                    agent_type=opinion.get("agent_type", ""),
+                    weight=float(opinion.get("weight", 1.0)),
+                    score=float(opinion["score"]) if opinion.get("score") is not None else None,
+                    metrics={"summary": opinion.get("metrics")},
+                    rationale=opinion.get("reason"),
+                    trace_id=trace_id,
+                )
+            )
+        if opinion_rows:
+            try:
+                db.add_all(opinion_rows)
+                db.flush()
+            except Exception:
+                logger.warning(
+                    "Failed to persist council agent opinions",
+                    exc_info=True,
+                )
 
         return CouncilAnalysisResponse(
             session_id=request.session_id,
-            commander_name=session.commander.card.name,
+            commander_name=training_session.commander.card.name,
             card_name=card.name,
             opinions=[CouncilOpinion(**opinion) for opinion in opinions],
+            trace_id=trace_id,
         )
 
 

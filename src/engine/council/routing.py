@@ -31,6 +31,7 @@ class CouncilState(TypedDict):
     agent_rankings: Annotated[dict[str, list[str]], _merge_rankings]
     final_ranking: list[str]
     config: CouncilConfig
+    trace_id: Optional[str]
 
 
 def _agent_node(agent_id: str, agent_type: str):
@@ -57,6 +58,7 @@ def _agent_node(agent_id: str, agent_type: str):
                 state["commander_text"],
                 state["deck_cards"],
                 state["candidates"],
+                state.get("trace_id"),
             )
             if not ranked:
                 ranked = heuristic_rank_candidates(
