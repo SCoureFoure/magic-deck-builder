@@ -28,7 +28,7 @@ from src.engine.archetypes import compute_identity_from_deck, extract_identity, 
 from src.engine.council.config import load_council_config
 from src.engine.council.config import _parse_agent as parse_agent_config
 from src.engine.context import summarize_context_config
-from src.engine.council.training import council_training_opinions
+from src.engine.council.training import council_training_opinions, council_training_synthesis
 from src.engine.deck_builder import generate_deck_with_attribution
 from src.engine.metrics import compute_coherence_metrics
 from src.engine.observability import generate_trace_id
@@ -217,8 +217,33 @@ class CouncilAgentPayload(BaseModel):
     weight: float = 1.0
     model: Optional[str] = None
     temperature: float = 0.3
+    system_prompt: Optional[str] = None
+    user_prompt_template: Optional[str] = None
     preferences: CouncilAgentPreferences = CouncilAgentPreferences()
     context: Optional[CouncilAgentContext] = None
+
+
+class CouncilConsultRequest(BaseModel):
+    """Council consult request."""
+
+    session_id: int
+    card_id: int
+    agents: list[CouncilAgentPayload]
+    synthesizer: CouncilAgentPayload
+    cached_opinions: Optional[list[CouncilOpinion]] = None
+    api_key: Optional[str] = None
+    trace_id: Optional[str] = None
+
+
+class CouncilConsultResponse(BaseModel):
+    """Council consult response."""
+
+    session_id: int
+    commander_name: str
+    card_name: str
+    opinions: list[CouncilOpinion]
+    verdict: str
+    trace_id: Optional[str]
 
 
 class CouncilAgentImportRequest(BaseModel):
@@ -520,6 +545,8 @@ def _serialize_agent_payload(agent) -> dict[str, Any]:
         "weight": agent.weight,
         "model": agent.model,
         "temperature": agent.temperature,
+        "system_prompt": agent.system_prompt,
+        "user_prompt_template": agent.user_prompt_template,
         "preferences": asdict(agent.preferences),
         "context": summarize_context_config(agent.context),
     }
@@ -578,6 +605,8 @@ def council_agent_export(request: CouncilAgentPayload) -> CouncilAgentExportResp
         "weight": request.weight,
         "model": request.model,
         "temperature": request.temperature,
+        "system_prompt": request.system_prompt,
+        "user_prompt_template": request.user_prompt_template,
         "preferences": request.preferences.dict(),
     }
     if request.context is not None:
@@ -587,6 +616,93 @@ def council_agent_export(request: CouncilAgentPayload) -> CouncilAgentExportResp
     agent_payload = _serialize_agent_payload(agent)
     yaml_text = yaml.safe_dump(agent_payload, sort_keys=False)
     return CouncilAgentExportResponse(yaml=yaml_text)
+
+
+@app.post("/api/training/council/consult", response_model=CouncilConsultResponse)
+def training_council_consult(request: CouncilConsultRequest) -> CouncilConsultResponse:
+    """Run all council agents and synthesize a verdict."""
+    with get_db() as db:
+        training_session = (
+            db.query(TrainingSession).filter(TrainingSession.id == request.session_id).first()
+        )
+        if not training_session:
+            raise HTTPException(status_code=404, detail="Training session not found")
+
+        card = db.query(Card).filter(Card.id == request.card_id).first()
+        if not card:
+            raise HTTPException(status_code=404, detail="Card not found")
+
+        if not request.api_key and not settings.openai_api_key:
+            raise HTTPException(
+                status_code=400,
+                detail="Consult requires OPENAI_API_KEY for synthesis.",
+            )
+
+        trace_id = request.trace_id or generate_trace_id()
+
+        agent_payloads = []
+        for agent in request.agents:
+            agent_payloads.append(
+                {
+                    "id": agent.id,
+                    "display_name": agent.display_name,
+                    "type": agent.type,
+                    "weight": agent.weight,
+                    "model": agent.model,
+                    "temperature": agent.temperature,
+                    "system_prompt": agent.system_prompt,
+                    "user_prompt_template": agent.user_prompt_template,
+                    "preferences": agent.preferences.dict(),
+                    "context": agent.context.dict() if agent.context else None,
+                }
+            )
+
+        opinions: list[dict[str, object]] = []
+        if request.cached_opinions:
+            opinions.extend([opinion.dict() for opinion in request.cached_opinions])
+
+        if agent_payloads:
+            overrides = {"agents": agent_payloads}
+            opinions.extend(
+                council_training_opinions(
+                    training_session.commander,
+                    card,
+                    overrides=overrides,
+                    api_key_override=request.api_key,
+                    trace_id=trace_id,
+                )
+            )
+
+        synth_payload = {
+            "id": request.synthesizer.id,
+            "display_name": request.synthesizer.display_name,
+            "type": request.synthesizer.type,
+            "weight": request.synthesizer.weight,
+            "model": request.synthesizer.model,
+            "temperature": request.synthesizer.temperature,
+            "system_prompt": request.synthesizer.system_prompt,
+            "user_prompt_template": request.synthesizer.user_prompt_template,
+            "preferences": request.synthesizer.preferences.dict(),
+            "context": request.synthesizer.context.dict() if request.synthesizer.context else None,
+        }
+        synth_agent = parse_agent_config(synth_payload)
+        verdict = council_training_synthesis(
+            training_session.commander,
+            card,
+            opinions,
+            synth_agent,
+            api_key_override=request.api_key,
+            trace_id=trace_id,
+        )
+
+        return CouncilConsultResponse(
+            session_id=request.session_id,
+            commander_name=training_session.commander.card.name,
+            card_name=card.name,
+            opinions=[CouncilOpinion(**opinion) for opinion in opinions],
+            verdict=verdict,
+            trace_id=trace_id,
+        )
 
 
 @app.post("/api/training/council/analyze", response_model=CouncilAnalysisResponse)
@@ -629,6 +745,8 @@ def training_council_analyze(request: CouncilAnalysisRequest) -> CouncilAnalysis
                 detail="Council analysis requires OPENAI_API_KEY to run LLM agents.",
             )
 
+        trace_id = request.trace_id or generate_trace_id()
+
         opinions = council_training_opinions(
             training_session.commander,
             card,
@@ -660,6 +778,7 @@ def training_council_analyze(request: CouncilAnalysisRequest) -> CouncilAnalysis
                 db.add_all(opinion_rows)
                 db.flush()
             except Exception:
+                db.rollback()
                 logger.warning(
                     "Failed to persist council agent opinions",
                     exc_info=True,

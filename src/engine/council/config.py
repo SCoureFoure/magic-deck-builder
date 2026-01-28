@@ -25,6 +25,8 @@ class AgentConfig:
     weight: float = 1.0
     model: Optional[str] = None
     temperature: float = 0.3
+    system_prompt: Optional[str] = None
+    user_prompt_template: Optional[str] = None
     preferences: AgentPreferences = field(default_factory=AgentPreferences)
     context: AgentContextConfig = field(default_factory=AgentContextConfig)
 
@@ -122,6 +124,8 @@ def _parse_agent(data: dict[str, Any]) -> AgentConfig:
         weight=float(data.get("weight", 1.0)),
         model=(data.get("model") or None),
         temperature=float(data.get("temperature", 0.3)),
+        system_prompt=(data.get("system_prompt") or None),
+        user_prompt_template=(data.get("user_prompt_template") or None),
         preferences=preferences,
         context=context,
     )

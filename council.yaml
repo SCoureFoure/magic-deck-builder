@@ -11,6 +11,13 @@ agents:
     display_name: Heuristic Core
     type: heuristic
     weight: 1.0
+    system_prompt: >-
+      You are a council agent for Commander synergy training. Explain why the card is
+      synergistic or not for the commander and if it would be a no or if it has
+      potential. Keep it short (1-2 sentences) and plain language.
+    user_prompt_template: >-
+      Explain in 1-2 sentences whether this card has synergy with the commander. Use
+      the data provided and return only the reason text.
     preferences:
       theme_weight: 0.6
       efficiency_weight: 0.2
@@ -21,6 +28,14 @@ agents:
     weight: 1.0
     model: gpt-4o-mini
     temperature: 0.4
+    system_prompt: >-
+      You are a council agent for Commander synergy training. Explain why the card is
+      synergistic or not for the commander and if it would be a no or if it has
+      potential. Keep it short (1-2 sentences) and plain language.
+    user_prompt_template: >-
+      Explain in 1-2 sentences whether this card has synergy with the commander,
+      prioritizing tribal/creature-type and thematic fit. Use the data provided and
+      return only the reason text.
     preferences:
       theme_weight: 0.75
       efficiency_weight: 0.15
@@ -31,6 +46,14 @@ agents:
     weight: 1.0
     model: gpt-4o-mini
     temperature: 0.3
+    system_prompt: >-
+      You are a council agent for Commander synergy training. Explain why the card is
+      synergistic or not for the commander and if it would be a no or if it has
+      potential. Keep it short (1-2 sentences) and plain language.
+    user_prompt_template: >-
+      Explain in 1-2 sentences whether this card has synergy with the commander,
+      prioritizing budget efficiency and cost-to-impact. Use the data provided and
+      return only the reason text.
     preferences:
       theme_weight: 0.35
       efficiency_weight: 0.15

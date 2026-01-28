@@ -12,7 +12,7 @@ from langchain_openai import ChatOpenAI
 from src.config import settings
 from src.database.models import Card, Commander
 from src.engine.archetypes import compute_identity_from_deck, score_card_for_identity
-from src.engine.council.config import load_council_config
+from src.engine.council.config import AgentConfig, load_council_config
 from src.engine.observability import estimate_tokens, log_event
 
 def _normalize_score(value: float) -> float:
@@ -58,33 +58,70 @@ def _heuristic_opinion(
     return weighted, summary
 
 
-def _build_reason_prompt(
-    agent_id: str,
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a council agent for Commander synergy training. "
+    "Explain why the card is synergistic or not for the commander and if it would be "
+    "a no or if it has potential. "
+    "Keep it short (1-2 sentences) and plain language."
+)
+DEFAULT_USER_PROMPT = (
+    "Explain in 1-2 sentences whether this card has synergy with the commander. "
+    "Use the data provided and return only the reason text."
+)
+
+
+def _build_data_block(
+    agent: AgentConfig,
     commander: Commander,
     card: Card,
     preferences: dict[str, float],
     heuristic_score: float,
-) -> tuple[str, str]:
-    system_prompt = (
-        "You are a council agent for Commander synergy training. "
-        "Explain why the card is synergistic or not for the commander. "
-        "Keep it short (1-2 sentences) and plain language."
-    )
-    user_prompt = (
-        f"Agent ID: {agent_id}\n"
+) -> str:
+    return (
+        "Data:\n"
+        f"Agent ID: {agent.agent_id}\n"
         f"Commander: {commander.card.name}\n"
         f"Commander text: {commander.card.oracle_text or ''}\n"
         f"Card: {card.name}\n"
         f"Card text: {card.oracle_text or ''}\n"
         f"Preferences: {preferences}\n"
-        f"Heuristic score (0-1): {heuristic_score:.2f}\n"
-        "Return only the reason text."
+        f"Heuristic score (0-1): {heuristic_score:.2f}"
     )
+
+
+def _build_synthesis_block(
+    opinions: list[dict[str, object]],
+) -> str:
+    lines = ["Council opinions:"]
+    for opinion in opinions:
+        agent_id = opinion.get("agent_id", "")
+        agent_type = opinion.get("agent_type", "")
+        weight = opinion.get("weight", 1.0)
+        score = opinion.get("score", 0.0)
+        metrics = opinion.get("metrics", "")
+        reason = opinion.get("reason", "")
+        lines.append(
+            f"- {agent_id} ({agent_type}) weight={weight} score={score} metrics={metrics} reason={reason}"
+        )
+    return "\n".join(lines)
+
+
+def _build_reason_prompt(
+    agent: AgentConfig,
+    commander: Commander,
+    card: Card,
+    preferences: dict[str, float],
+    heuristic_score: float,
+) -> tuple[str, str]:
+    system_prompt = agent.system_prompt or DEFAULT_SYSTEM_PROMPT
+    template = agent.user_prompt_template or DEFAULT_USER_PROMPT
+    data_block = _build_data_block(agent, commander, card, preferences, heuristic_score)
+    user_prompt = f"{template}\n\n{data_block}"
     return system_prompt, user_prompt
 
 
 def _llm_reason(
-    agent_id: str,
+    agent: AgentConfig,
     commander: Commander,
     card: Card,
     preferences: dict[str, float],
@@ -103,7 +140,7 @@ def _llm_reason(
         api_key=api_key,
     )
     system_prompt, user_prompt = _build_reason_prompt(
-        agent_id,
+        agent,
         commander,
         card,
         preferences,
@@ -121,7 +158,7 @@ def _llm_reason(
     log_event(
         "training_llm_reason",
         {
-            "agent_id": agent_id,
+            "agent_id": agent.agent_id,
             "model": model or settings.openai_model,
             "success": bool(content),
             "duration_ms": duration_ms,
@@ -154,7 +191,7 @@ def council_training_opinions(
         reason = ""
         if agent.agent_type == "llm":
             reason = _llm_reason(
-                agent.agent_id,
+                agent,
                 commander,
                 card,
                 preferences,
@@ -177,3 +214,47 @@ def council_training_opinions(
         )
 
     return opinions
+
+
+def council_training_synthesis(
+    commander: Commander,
+    card: Card,
+    opinions: list[dict[str, object]],
+    synthesizer: AgentConfig,
+    api_key_override: Optional[str] = None,
+    trace_id: Optional[str] = None,
+) -> str:
+    api_key = api_key_override or settings.openai_api_key
+    if not api_key:
+        return ""
+    llm = ChatOpenAI(
+        model=synthesizer.model or settings.openai_model,
+        temperature=synthesizer.temperature,
+        api_key=api_key,
+    )
+    system_prompt = synthesizer.system_prompt or DEFAULT_SYSTEM_PROMPT
+    user_prompt = (synthesizer.user_prompt_template or DEFAULT_USER_PROMPT).strip()
+    data_block = _build_synthesis_block(opinions)
+    combined_prompt = f"{user_prompt}\n\n{data_block}"
+    started = time.monotonic()
+    response = llm.invoke(
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": combined_prompt},
+        ]
+    )
+    content = getattr(response, "content", "").strip()
+    duration_ms = int((time.monotonic() - started) * 1000)
+    log_event(
+        "training_llm_synthesis",
+        {
+            "agent_id": synthesizer.agent_id,
+            "model": synthesizer.model or settings.openai_model,
+            "success": bool(content),
+            "duration_ms": duration_ms,
+            "prompt_tokens_est": estimate_tokens(system_prompt + combined_prompt),
+            "response_tokens_est": estimate_tokens(content),
+        },
+        trace_id=trace_id,
+    )
+    return content

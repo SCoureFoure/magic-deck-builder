@@ -1,6 +1,123 @@
 /Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
   warnings.warn(
-INFO:     Started server process [36263]
+INFO:     Started server process [40410]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:51024 - "POST /api/training/session/start HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51025 - "GET /api/training/session/43/next HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51033 - "GET /api/council/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51035 - "GET /api/council/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51026 - "GET /api/training/stats HTTP/1.1" 200 OK
+WARNING:src.web.app:Failed to persist council agent opinions
+Traceback (most recent call last):
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such table: council_agent_opinions
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/src/web/app.py", line 779, in training_council_analyze
+    db.flush()
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/session.py", line 4331, in flush
+    self._flush(objects)
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/session.py", line 4467, in _flush
+    transaction.rollback(_capture_exception=True)
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/util/langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/session.py", line 4427, in _flush
+    flush_context.execute()
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/unitofwork.py", line 466, in execute
+    rec.execute(self)
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/unitofwork.py", line 642, in execute
+    util.preloaded.orm_persistence.save_obj(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/persistence.py", line 93, in save_obj
+    _emit_insert_statements(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/persistence.py", line 1233, in _emit_insert_statements
+    result = connection.execute(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: council_agent_opinions
+[SQL: INSERT INTO council_agent_opinions (deck_id, training_session_id, commander_id, card_id, role, agent_id, agent_type, weight, score, metrics, rationale, trace_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]
+[parameters: (None, 43, 2097, 1679, 'training', 'heuristic-core', 'heuristic', 1.0, 0.2653666666666667, '{"summary": "theme=0.00 efficiency=0.33 budget=0.99"}', '', 'b0ecc63510ff4d16bd92f3c2cd77c8cb', '2026-01-28 04:32:52.489945')]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+INFO:     127.0.0.1:51193 - "POST /api/training/council/analyze HTTP/1.1" 200 OK
+INFO:httpx:HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:observability:event=training_llm_reason payload={"agent_id": "llm-theme-focused", "duration_ms": 2300, "model": "gpt-4o-mini", "prompt_tokens_est": 259, "response_tokens_est": 46, "success": true, "trace_id": "a1dd9b8392e54554950a1e1067650227"}
+WARNING:src.web.app:Failed to persist council agent opinions
+Traceback (most recent call last):
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such table: council_agent_opinions
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/src/web/app.py", line 779, in training_council_analyze
+    db.flush()
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/session.py", line 4331, in flush
+    self._flush(objects)
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/session.py", line 4467, in _flush
+    transaction.rollback(_capture_exception=True)
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/util/langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/session.py", line 4427, in _flush
+    flush_context.execute()
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/unitofwork.py", line 466, in execute
+    rec.execute(self)
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/unitofwork.py", line 642, in execute
+    util.preloaded.orm_persistence.save_obj(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/persistence.py", line 93, in save_obj
+    _emit_insert_statements(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/orm/persistence.py", line 1233, in _emit_insert_statements
+    result = connection.execute(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/salcoraccio/Documents/Repositories/magic-deck-builder/.venv/lib/python3.9/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: council_agent_opinions
+[SQL: INSERT INTO council_agent_opinions (deck_id, training_session_id, commander_id, card_id, role, agent_id, agent_type, weight, score, metrics, rationale, trace_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]
+[parameters: (None, 43, 2097, 1679, 'training', 'llm-theme-focused', 'llm', 1.0, 0.14935, '{"summary": "theme=0.00 efficiency=0.33 budget=0.99"}', 'Hedron Crawler does not synergize with The Necrobloom as it does not contribute to creating Plant or Zombie tokens, nor does it support the landfall theme directly. It would be a pass.', 'a1dd9b8392e54554950a1e1067650227', '2026-01-28 04:32:59.439709')]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+INFO:     127.0.0.1:51212 - "POST /api/training/council/analyze HTTP/1.1" 200 OK
+INFO:httpx:HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:observability:event=training_llm_reason payload={"agent_id": "llm-theme-focused", "duration_ms": 1306, "model": "gpt-4o-mini", "prompt_tokens_est": 259, "response_tokens_est": 39, "success": true, "trace_id": "2327f9ea3cb14dc0bed7463ccf92dcf9"}
+INFO:httpx:HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:observability:event=training_llm_synthesis payload={"agent_id": "synthesizer", "duration_ms": 2288, "model": "gpt-4o-mini", "prompt_tokens_est": 253, "response_tokens_est": 57, "success": true, "trace_id": "2327f9ea3cb14dc0bed7463ccf92dcf9"}
+INFO:     127.0.0.1:51382 - "POST /api/training/council/consult HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52019 - "GET /api/council/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52021 - "GET /api/council/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52613 - "POST /api/training/session/vote HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52615 - "GET /api/training/session/43/next HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52617 - "GET /api/training/stats HTTP/1.1" 200 OK

@@ -635,7 +635,7 @@ body::before {
 
 .council-lab-panels {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: 1fr;
   gap: 16px;
 }
 
@@ -649,22 +649,134 @@ body::before {
   box-shadow: 0 12px 20px rgba(31, 27, 22, 0.08);
 }
 
+.council-lab .field {
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+.council-lab .field span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.council-lab .field input,
+.council-lab .field select {
+  width: 100%;
+  max-width: 520px;
+}
+
+.council-lab .field input:disabled,
+.council-lab .field select:disabled,
+.council-lab .field textarea:disabled {
+  background: rgba(30, 30, 30, 0.04);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.council-lab .field textarea {
+  width: 100%;
+  max-width: 100%;
+  min-height: 96px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: white;
+  resize: vertical;
+}
+
+.council-lab .short-input {
+  max-width: 120px;
+  justify-self: start;
+}
+
+.help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(47, 122, 108, 0.12);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: help;
+}
+
+.help::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translate(-50%, -8px);
+  background: rgba(31, 27, 22, 0.92);
+  color: white;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  width: max-content;
+  max-width: 260px;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 10px 18px rgba(31, 27, 22, 0.2);
+  z-index: 5;
+}
+
+.help:hover::after,
+.help:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, -12px);
+}
+
+.inline-note {
+  font-size: 0.78rem;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(31, 27, 22, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .council-panel-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
 
+.inline-toggle {
+  align-items: center;
+  margin-right: 6px;
+}
+
 .council-agent-form {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
 .council-agent-weights {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .council-lab-buttons {
@@ -672,6 +784,55 @@ body::before {
   flex-wrap: wrap;
   gap: 10px;
 }
+
+.council-consult {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 10px 20px rgba(31, 27, 22, 0.08);
+}
+
+.council-consult-synth {
+  background: white;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.council-consult-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.council-consult-header h4 {
+  margin: 0;
+}
+
+.council-consult-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.council-consult-result {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.council-add-panel {
+  display: flex;
+  justify-content: flex-end;
+}
+
 
 .council-opinions {
   display: grid;

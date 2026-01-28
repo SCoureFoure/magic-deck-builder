@@ -920,18 +920,18 @@ export default function App() {
                 ))}
                 <div className="training-actions">
                   <button
-                    className="secondary"
-                    onClick={() => handleTrainingLabel(0)}
-                    disabled={trainingLoading}
-                  >
-                    Pass
-                  </button>
-                  <button
                     className="primary"
                     onClick={() => handleTrainingLabel(1)}
                     disabled={trainingLoading}
                   >
                     Potential
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => handleTrainingLabel(0)}
+                    disabled={trainingLoading}
+                  >
+                    No.
                   </button>
                 </div>
                 <CouncilLab
