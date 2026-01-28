@@ -1,235 +1,168 @@
 # Magic Deck Builder
 
-Commander (EDH) deck builder with CLI, REST API, and web UI for searching and building Magic: The Gathering Commander decks using Scryfall data.
+Commander (EDH) deck builder with a CLI, FastAPI backend, and a Vite + React frontend for searching commanders, generating decks, and labeling synergy.
 
-## Features
+## Highlights
 
-- **Commander Search**: Search for legal commanders with eligibility detection (legendary creatures, partner, backgrounds, etc.)
-- **Scryfall Integration**: Bulk data ingestion with streaming JSON parsing for memory efficiency
-- **CLI Interface**: Beautiful terminal UI with Rich for commander search and data management
-- **REST API**: FastAPI backend with commander search endpoints
-- **SQLite/PostgreSQL**: Flexible database support for local dev and production
-- **Comprehensive Tests**: 38+ passing tests with pytest
+- Commander search with eligibility detection (legendary, partner, background, etc.)
+- Deck generation with heuristic scoring, LLM agents, and optional council voting
+- Council orchestration with YAML config, routing strategies, and vote aggregation
+- Synergy training flows and community vote stats
+- CLI ingestion of Scryfall bulk data with streaming JSON parsing
+- Web UI for search, deck wizard, training, and Council Lab tuning
 
 ## Quick Start
 
 ```bash
 # 1. Set up Python environment (requires Python 3.9+)
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # 2. Copy environment variables
-cp .env.example .env
+cp .env.example .env  # On Windows: copy .env.example .env
 
 # 3. Install dependencies
 pip install -e ".[dev]"
 
-# 4. Ingest Scryfall data (takes a few minutes, downloads ~200MB)
+# 4. (Optional) Start PostgreSQL if you use the default DATABASE_URL
+docker compose up -d
+
+# 5. Ingest Scryfall data (takes a few minutes, downloads ~200MB)
 python -m src.cli ingest bulk oracle_cards
 
-# 5. Search for commanders
-python -m src.cli search commander "Atraxa"
+# 6. Start the API
+uvicorn src.web.app:app --reload --port 8000
+```
+
+Frontend (Vite):
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`. Set `VITE_API_BASE=http://localhost:8000` in `web/.env` for a custom API base.
+
+## Environment
+
+Core variables (see `.env.example`):
+
+- `DATABASE_URL` (default points at PostgreSQL)
+- `OPENAI_API_KEY` (required for LLM agents or council mode)
+- `OPENAI_MODEL` (default `gpt-4o-mini`)
+
+SQLite option for local-only use:
+```
+DATABASE_URL=sqlite:///./data/magic.db
 ```
 
 ## CLI Commands
 
 ### Ingestion
 ```bash
-# Ingest Scryfall bulk data (auto-downloads and caches)
 python -m src.cli ingest bulk oracle_cards
-
-# Ingest a smaller commander-legal subset (useful for small DB limits)
 python -m src.cli ingest small --limit 20000
-
-# Ingest a very small sample via Scryfall search (fastest option)
-python -m src.cli ingest sample --limit 2000
-
-# Sample random pages for more variety
 python -m src.cli ingest sample --limit 2000 --random-pages 3
-
-# Ingest from a local file
 python -m src.cli ingest file ./data/oracle_cards.json
-
-# Force re-download
 python -m src.cli ingest bulk oracle_cards --force
 ```
 
 ### Commander Search
 ```bash
-# Search for commanders
 python -m src.cli search commander "Urza"
-
-# Limit results
 python -m src.cli search commander "Dragon" --limit 5
-
-# Populate commanders table first (optional, for faster searches)
 python -m src.cli search commander "Sisay" --populate
+```
+
+### Deck Generation
+```bash
+python -m src.cli generate deck "Atraxa"
+python -m src.cli generate deck "Atraxa" --council --council-config council.yaml
+python -m src.cli generate deck "Atraxa" --routing-strategy debate --debate-adjudicator-id llm-judge
+```
+
+### Evaluation
+```bash
+python -m src.cli eval golden --tasks data/test/golden_tasks.json --output results.json
 ```
 
 ## Web API
 
-### Start the Backend
+Start the backend:
 ```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Start FastAPI server with hot-reload
 uvicorn src.web.app:app --reload --port 8000
 ```
 
-### API Endpoints
+Key endpoints:
 
-**Health Check:**
+- `GET /api/health`
+- `GET /api/commanders?query=...&limit=...&populate=...`
+- `POST /api/decks/generate`
+- `GET /api/commanders/{commander}/synergy?query=...`
+- `GET /api/commanders/{commander}/synergy/top?limit=...&min_ratio=...`
+- `POST /api/training/session/start`
+- `GET /api/training/session/{id}/next`
+- `POST /api/training/session/vote`
+- `GET /api/training/stats`
+- `GET /api/council/agents`
+- `POST /api/council/agent/import`
+- `POST /api/council/agent/export`
+- `POST /api/training/council/analyze`
+- `POST /api/training/council/consult`
+
+Example deck generation:
 ```bash
-curl http://localhost:8000/api/health
+curl -X POST http://localhost:8000/api/decks/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "commander_name": "Atraxa, Praetors'\'' Voice",
+    "use_llm_agent": true,
+    "use_council": true
+  }'
 ```
 
-**Commander Search:**
-```bash
-curl "http://localhost:8000/api/commanders?query=Atraxa&limit=10"
-```
+## Council Configuration
 
-**Parameters:**
-- `query` (required): Commander name to search for
-- `limit` (optional): Max results (1-50, default 10)
-- `populate` (optional): Populate commanders table first (default false)
+Council behavior lives in `council.yaml` and is documented in `README-COUNCIL.md`.
+Routing strategies include `parallel`, `sequential`, and `debate`. Most overrides can be passed via API or CLI.
 
-**Example Response:**
-```json
-{
-    "query": "Atraxa",
-    "count": 2,
-    "results": [
-        {
-            "name": "Atraxa, Praetors' Voice",
-            "type_line": "Legendary Creature — Phyrexian Angel Horror",
-            "color_identity": ["B", "G", "U", "W"],
-            "mana_cost": "{G}{W}{U}{B}",
-            "cmc": 4.0,
-            "eligibility": "legendary creature",
-            "commander_legal": "legal"
-        }
-    ]
-}
-```
+## Frontend
 
-### Frontend (Coming Soon)
-```bash
-# Frontend development server
-cd web
-npm install
-npm run dev
-```
+The React app ships with:
+- Commander search and eligibility results
+- Deck Wizard for deck generation, roles, and metrics
+- Synergy Training flow with vote stats
+- Council Lab for per-agent prompts, weights, import/export, and live consults
 
-Open `http://localhost:5173` - the frontend will connect to the API at `http://localhost:8000`.
-
-## Development
-
-### Running Tests
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=src --cov-report=html
-
-# Run specific test file
-pytest tests/unit/test_commander.py
-
-# Run with verbose output
-pytest -v
-```
-
-### Code Quality
-```bash
-# Format code
-ruff format src tests
-
-# Lint code
-ruff check src tests
-
-# Type checking (optional)
-mypy src
-```
-
-### Database
-
-The project uses **SQLite** by default for local development (no Docker required). To use PostgreSQL:
-
-```bash
-# Start PostgreSQL with Docker
-docker compose up -d
-
-# Update .env
-DATABASE_URL=postgresql://magic:magic@localhost:5432/magic_deck_builder
-```
+Frontend lives in `web/`.
 
 ## Project Structure
 
 ```
 magic-deck-builder/
 ├── src/
-│   ├── cli/              # Command-line interface (Typer + Rich)
+│   ├── cli/              # CLI (Typer + Rich)
 │   ├── database/         # SQLAlchemy models and engine
-│   ├── engine/           # Commander eligibility and search logic
+│   ├── engine/           # Deck builder, council, metrics, validation
 │   ├── ingestion/        # Scryfall client and bulk data loader
-│   ├── models/           # Pydantic models (future use)
 │   └── web/              # FastAPI REST API
-├── tests/
-│   ├── unit/             # Unit tests (38+ tests)
-│   └── integration/      # Integration tests (future)
-├── web/                  # React + TypeScript frontend (basic setup)
-├── data/                 # SQLite database and cache (gitignored)
-├── docs/                 # Documentation
-│   └── discovery.md      # Product requirements and architecture
-├── pyproject.toml        # Python dependencies and config
+├── web/                  # React + TypeScript frontend (Vite)
+├── tests/                # Unit + integration tests
+├── data/                 # Cache + local DB (gitignored)
+├── docs/                 # Architecture and patterns
+├── council.yaml
+├── pyproject.toml
 └── README.md
 ```
 
-## Technologies
+## Development
 
-**Backend:**
-- Python 3.9+
-- FastAPI - REST API framework
-- SQLAlchemy - ORM with SQLite/PostgreSQL support
-- Typer + Rich - Beautiful CLI
-- httpx - HTTP client for Scryfall API
-- ijson - Streaming JSON parser
-- Pydantic - Data validation
+```bash
+pytest
+ruff format src tests
+ruff check src tests
+```
 
-**Frontend (Basic Setup):**
-- React 18
-- TypeScript
-- Vite
+## Docs
 
-**Testing:**
-- pytest
-- pytest-cov
-- hypothesis (property-based testing)
-
-## Architecture
-
-See [docs/discovery.md](docs/discovery.md) for:
-- Product requirements
-- Technical architecture
-- Data models
-- API integration details
-- Future roadmap
-
-## Security Features
-
-- SHA-256 cache key hashing (prevents path traversal attacks)
-- Proper JSON field typing
-- Rate limiting for Scryfall API (75ms default)
-- Input validation with Pydantic
-
-## Contributing
-
-1. Create a feature branch
-2. Make your changes with tests
-3. Run `pytest` and `ruff check`
-4. Submit a pull request
-
-## License
-
-MIT License (or your preferred license)
+See `docs/discovery.md` for architecture, and `docs/patterns/` for implementation patterns.

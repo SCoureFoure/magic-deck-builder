@@ -5,8 +5,10 @@ Use this pattern for building REST APIs in this project. Establishes conventions
 
 ## Implementation
 **App structure:**
-- Single FastAPI app instance in `src/web/app.py`
-- Pydantic models for request/response validation
+- FastAPI app instance in `src/web/app.py`
+- Route modules in `src/web/routes/*.py`
+- Pydantic models in `src/web/schemas.py`
+- Shared serializers in `src/web/serializers.py`
 - Type hints on all endpoints for automatic OpenAPI docs
 
 **CORS configuration:**
@@ -41,9 +43,9 @@ Use this pattern for building REST APIs in this project. Establishes conventions
 - No request logging middleware yet
 
 ## Examples
-- [src/web/app.py:35-43](src/web/app.py) - FastAPI app setup with CORS
-- [src/web/app.py:14-33](src/web/app.py) - Pydantic response models
-- [src/web/app.py:52-85](src/web/app.py) - Endpoint with response model and error handling
+- `src/web/app.py` - FastAPI app setup with CORS and router includes
+- `src/web/schemas.py` - Pydantic response/request models
+- `src/web/routes/commanders.py` - Endpoint with response model and error handling
 
 ## Operations
 
@@ -107,5 +109,6 @@ lsof data/magic_deck_builder.db
 ```
 
 ## Updated
+2026-01-28: Split routes and schemas into dedicated modules
 2026-01-14: Added operations and troubleshooting section
 2026-01-14: Initial pattern documentation
