@@ -1,19 +1,8 @@
 
 > magic-deck-builder-web@0.1.0 dev
-> vite --host 0.0.0.0 --port 5173
+> vite --host 127.0.0.1 --port 5173
 
 
-  VITE v5.4.21  ready in 809 ms
+  VITE v5.4.21  ready in 283 ms
 
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: http://192.168.1.18:5173/
-3:24:41 PM [vite] hmr update /src/App.tsx
-3:25:00 PM [vite] hmr update /src/styles.css
-4:14:04 PM [vite] hmr update /src/App.tsx
-4:14:10 PM [vite] hmr update /src/App.tsx
-4:14:24 PM [vite] hmr update /src/App.tsx
-4:14:33 PM [vite] hmr update /src/App.tsx
-4:14:46 PM [vite] hmr update /src/App.tsx
-4:14:57 PM [vite] hmr update /src/styles.css
-4:28:53 PM [vite] hmr update /src/App.tsx
-4:34:10 PM [vite] hmr update /src/App.tsx
+  ➜  Local:   http://127.0.0.1:5173/

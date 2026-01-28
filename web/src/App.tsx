@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { CardDisplay, type CardFace } from "./components/CardDisplay";
+import { CouncilLab } from "./components/CouncilLab";
 
 type CommanderResult = {
   name: string;
@@ -89,23 +90,6 @@ type TrainingStatsResponse = {
   }[];
 };
 
-type CouncilOpinion = {
-  agent_id: string;
-  display_name: string;
-  agent_type: string;
-  weight: number;
-  score: number;
-  metrics: string;
-  reason: string;
-};
-
-type CouncilAnalysisResponse = {
-  session_id: number;
-  commander_name: string;
-  card_name: string;
-  opinions: CouncilOpinion[];
-};
-
 type SynergyCardResult = {
   card_name: string;
   type_line: string;
@@ -169,10 +153,6 @@ export default function App() {
   const [trainingSession, setTrainingSession] = useState<TrainingSessionResponse | null>(null);
   const [trainingCard, setTrainingCard] = useState<TrainingCard | null>(null);
   const [trainingStats, setTrainingStats] = useState<TrainingStatsResponse | null>(null);
-  const [councilLoading, setCouncilLoading] = useState(false);
-  const [councilError, setCouncilError] = useState<string | null>(null);
-  const [councilOpinions, setCouncilOpinions] = useState<CouncilOpinion[]>([]);
-  const [councilApiKey, setCouncilApiKey] = useState("");
   const [synergyQuery, setSynergyQuery] = useState("");
   const [synergyResults, setSynergyResults] = useState<SynergyCardResult[]>([]);
   const [synergyLoading, setSynergyLoading] = useState(false);
@@ -412,8 +392,6 @@ export default function App() {
   const startTrainingSession = async () => {
     setTrainingLoading(true);
     setTrainingError(null);
-    setCouncilOpinions([]);
-    setCouncilError(null);
     try {
       const response = await fetch(apiUrl("/api/training/session/start"), { method: "POST" });
       if (!response.ok) {
@@ -461,8 +439,6 @@ export default function App() {
       }
       const data = (await response.json()) as TrainingCardResponse;
       setTrainingCard(data.card);
-      setCouncilOpinions([]);
-      setCouncilError(null);
     } catch (err) {
       if (err instanceof TypeError) {
         const hint = API_BASE || "http://localhost:8000";
@@ -514,8 +490,6 @@ export default function App() {
       }
       await fetchTrainingCard(trainingSession.session_id);
       await fetchTrainingStats();
-      setCouncilOpinions([]);
-      setCouncilError(null);
     } catch (err) {
       if (err instanceof TypeError) {
         setTrainingError("Could not reach API. Is the backend running at http://localhost:8000?");
@@ -524,47 +498,6 @@ export default function App() {
       }
     } finally {
       setTrainingLoading(false);
-    }
-  };
-
-  const handleCouncilAnalyze = async () => {
-    if (!trainingSession || !trainingCard) return;
-    setCouncilLoading(true);
-    setCouncilError(null);
-    setCouncilOpinions([]);
-    try {
-      const response = await fetch(apiUrl("/api/training/council/analyze"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: trainingSession.session_id,
-          card_id: trainingCard.id,
-          api_key: councilApiKey.trim() || undefined,
-        }),
-      });
-      if (!response.ok) {
-        let detail = "Council analysis failed.";
-        try {
-          const payload = await response.json();
-          if (typeof payload?.detail === "string") {
-            detail = payload.detail;
-          }
-        } catch {
-          // Ignore JSON parse errors and use default message.
-        }
-        throw new Error(`Council analysis failed (${response.status}). ${detail}`);
-      }
-      const data = (await response.json()) as CouncilAnalysisResponse;
-      setCouncilOpinions(data.opinions);
-    } catch (err) {
-      if (err instanceof TypeError) {
-        const hint = API_BASE || "http://localhost:8000";
-        setCouncilError(`Could not reach API. Is the backend running at ${hint}?`);
-      } else {
-        setCouncilError(err instanceof Error ? err.message : "Unexpected error.");
-      }
-    } finally {
-      setCouncilLoading(false);
     }
   };
 
@@ -1001,51 +934,11 @@ export default function App() {
                     Potential
                   </button>
                 </div>
-                <div className="council-panel">
-                  <div className="council-panel-header">
-                    <div>
-                      <h3>Council analysis</h3>
-                      <p>Ask council members to weigh in on this synergy call.</p>
-                    </div>
-                    <button
-                      className="secondary"
-                      onClick={handleCouncilAnalyze}
-                      disabled={councilLoading}
-                    >
-                      {councilLoading ? "Analyzing..." : "Analyze with council"}
-                    </button>
-                  </div>
-                  <label className="field">
-                    <span>OpenAI API key (optional)</span>
-                    <input
-                      type="password"
-                      value={councilApiKey}
-                      onChange={(event) => setCouncilApiKey(event.target.value)}
-                      placeholder="sk-..."
-                    />
-                  </label>
-                  {councilError && <div className="notice error">{councilError}</div>}
-                  {!councilError && councilOpinions.length === 0 && !councilLoading && (
-                    <p className="muted">
-                      Council output will appear here after you run an analysis.
-                    </p>
-                  )}
-                  {councilOpinions.length > 0 && (
-                    <div className="council-opinions">
-                      {councilOpinions.map((opinion) => (
-                        <article key={opinion.agent_id} className="council-opinion">
-                          <div className="council-opinion-header">
-                            <strong>{opinion.display_name}</strong>
-                            <span className="pill subtle">{opinion.agent_type}</span>
-                            <span className="pill">score {opinion.score.toFixed(2)}</span>
-                          </div>
-                          <p className="meta">{opinion.metrics}</p>
-                          {opinion.reason && <p className="reason">{opinion.reason}</p>}
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <CouncilLab
+                  sessionId={trainingSession.session_id}
+                  cardId={trainingCard.id}
+                  apiBase={API_BASE}
+                />
               </div>
             )}
           </div>

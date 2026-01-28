@@ -1,6 +1,7 @@
 """FastAPI app for commander search UI."""
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional
 
@@ -25,6 +26,8 @@ from src.database.seed_roles import seed_roles
 from src.engine.commander import create_commander_entry, find_commanders, is_commander_eligible, populate_commanders
 from src.engine.archetypes import compute_identity_from_deck, extract_identity, score_card_for_identity
 from src.engine.council.config import load_council_config
+from src.engine.council.config import _parse_agent as parse_agent_config
+from src.engine.context import summarize_context_config
 from src.engine.council.training import council_training_opinions
 from src.engine.deck_builder import generate_deck_with_attribution
 from src.engine.metrics import compute_coherence_metrics
@@ -167,6 +170,67 @@ class CouncilAnalysisResponse(BaseModel):
     card_name: str
     opinions: list[CouncilOpinion]
     trace_id: Optional[str]
+
+
+class CouncilAgentPreferences(BaseModel):
+    """Agent preference weights for council config."""
+
+    theme_weight: float = 0.5
+    efficiency_weight: float = 0.25
+    budget_weight: float = 0.25
+    price_cap_usd: Optional[float] = None
+
+
+class CouncilAgentContextBudget(BaseModel):
+    """Context budget settings for council agents."""
+
+    max_deck_cards: int = 40
+    max_candidates: int = 60
+    max_commander_text_chars: int = 1200
+    max_candidate_oracle_chars: int = 600
+
+
+class CouncilAgentContextFilters(BaseModel):
+    """Context filter settings for council agents."""
+
+    include_commander_text: bool = True
+    include_deck_cards: bool = True
+    include_candidate_oracle: bool = True
+    include_candidate_type_line: bool = True
+    include_candidate_cmc: bool = True
+    include_candidate_price: bool = True
+
+
+class CouncilAgentContext(BaseModel):
+    """Context configuration for a council agent."""
+
+    budget: CouncilAgentContextBudget = CouncilAgentContextBudget()
+    filters: CouncilAgentContextFilters = CouncilAgentContextFilters()
+
+
+class CouncilAgentPayload(BaseModel):
+    """Single council agent payload."""
+
+    id: str
+    display_name: Optional[str] = None
+    type: str
+    weight: float = 1.0
+    model: Optional[str] = None
+    temperature: float = 0.3
+    preferences: CouncilAgentPreferences = CouncilAgentPreferences()
+    context: Optional[CouncilAgentContext] = None
+
+
+class CouncilAgentImportRequest(BaseModel):
+    """YAML import request for a single council agent."""
+
+    yaml: str
+
+
+class CouncilAgentExportResponse(BaseModel):
+    """YAML export response for a single council agent."""
+
+    yaml: str
 
 
 class SynergyCardResult(BaseModel):
@@ -446,6 +510,83 @@ def training_session_start() -> TrainingSessionResponse:
             session_id=session.id,
             commander=to_training_card(commander_card),
         )
+
+
+def _serialize_agent_payload(agent) -> dict[str, Any]:
+    return {
+        "id": agent.agent_id,
+        "display_name": agent.display_name,
+        "type": agent.agent_type,
+        "weight": agent.weight,
+        "model": agent.model,
+        "temperature": agent.temperature,
+        "preferences": asdict(agent.preferences),
+        "context": summarize_context_config(agent.context),
+    }
+
+
+@app.get("/api/council/agents", response_model=list[CouncilAgentPayload])
+def council_agents() -> list[CouncilAgentPayload]:
+    """Return the resolved council agents from the config."""
+    config = load_council_config()
+    return [_serialize_agent_payload(agent) for agent in config.agents]
+
+
+@app.post("/api/council/agent/import", response_model=CouncilAgentPayload)
+def council_agent_import(request: CouncilAgentImportRequest) -> CouncilAgentPayload:
+    """Parse a single council agent YAML document into agent config."""
+    import yaml
+
+    try:
+        payload = yaml.safe_load(request.yaml) or {}
+    except yaml.YAMLError as exc:
+        raise HTTPException(status_code=400, detail="Invalid YAML.") from exc
+
+    agent_data: Optional[dict[str, Any]] = None
+    if isinstance(payload, dict) and isinstance(payload.get("agents"), list):
+        agents = payload.get("agents") or []
+        if len(agents) != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Expected a single agent in YAML.",
+            )
+        if isinstance(agents[0], dict):
+            agent_data = agents[0]
+    elif isinstance(payload, dict) and isinstance(payload.get("agent"), dict):
+        agent_data = payload["agent"]
+    elif isinstance(payload, dict) and (
+        "id" in payload or "agent_id" in payload or "type" in payload
+    ):
+        agent_data = payload
+
+    if not agent_data:
+        raise HTTPException(status_code=400, detail="No agent definition found.")
+
+    agent = parse_agent_config(agent_data)
+    return _serialize_agent_payload(agent)
+
+
+@app.post("/api/council/agent/export", response_model=CouncilAgentExportResponse)
+def council_agent_export(request: CouncilAgentPayload) -> CouncilAgentExportResponse:
+    """Export a single council agent to YAML."""
+    import yaml
+
+    payload: dict[str, Any] = {
+        "id": request.id,
+        "display_name": request.display_name,
+        "type": request.type,
+        "weight": request.weight,
+        "model": request.model,
+        "temperature": request.temperature,
+        "preferences": request.preferences.dict(),
+    }
+    if request.context is not None:
+        payload["context"] = request.context.dict()
+
+    agent = parse_agent_config(payload)
+    agent_payload = _serialize_agent_payload(agent)
+    yaml_text = yaml.safe_dump(agent_payload, sort_keys=False)
+    return CouncilAgentExportResponse(yaml=yaml_text)
 
 
 @app.post("/api/training/council/analyze", response_model=CouncilAnalysisResponse)
